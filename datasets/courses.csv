@@ -1,0 +1,8 @@
+course_code,course_name,department_code,semester,credits,type
+CS501,Advanced Data Structures & Algorithms,CSE,5,4,Theory
+CS502,Operating Systems & Kernel Architecture,CSE,5,4,Theory
+CS503,Database Management Systems,CSE,5,4,Theory
+CS504,Computer Networks & Distributed Systems,CSE,5,4,Theory
+CS505,Full Stack Web Engineering Lab,CSE,5,2,Lab
+AI501,Machine Learning Fundamentals,AI_DS,5,4,Theory
+EC501,Signals & Systems,ECE,5,4,Theory

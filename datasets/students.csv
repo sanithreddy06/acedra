@@ -1,0 +1,7 @@
+roll_number,usn,full_name,email,department_code,semester,batch_year,section,cgpa,attendance_percentage,placement_status
+CS22B001,1RV22CS001,Alex Mercer,student@smartcampus.edu,CSE,5,2024,A,8.84,92.5,Eligible
+CS22B002,1RV22CS002,Rohan Iyer,rohan.iyer@smartcampus.edu,CSE,5,2024,A,9.15,96.0,Eligible
+CS22B003,1RV22CS003,Priya Nair,priya.nair@smartcampus.edu,CSE,5,2024,A,7.85,88.0,Eligible
+CS22B004,1RV22CS004,Kavita Rao,kavita.rao@smartcampus.edu,CSE,5,2024,A,5.65,68.0,Ineligible
+CS22B005,1RV22CS005,Arjun Mehta,arjun.mehta@smartcampus.edu,CSE,5,2024,A,8.42,91.0,Placed
+CS22B006,1RV22CS006,Sneha Patil,sneha.patil@smartcampus.edu,CSE,5,2024,A,6.20,71.0,Eligible

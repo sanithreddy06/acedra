@@ -1,0 +1,6 @@
+employee_id,full_name,email,department_code,designation,specialization,qualification
+FAC-2023-042,Dr. Elena Rostova,faculty@smartcampus.edu,CSE,Professor of Computer Systems,Distributed Systems & OS,Ph.D.
+FAC-2022-018,Dr. Marcus Thorne,marcus.thorne@smartcampus.edu,CSE,Associate Professor,Database Engineering,Ph.D.
+MNT-2024-001,Prof. David K. Sterling,mentor@smartcampus.edu,CSE,Chief Academic Mentor & Assoc. Professor,Software Architecture,M.Tech.
+ADM-2020-001,Dr. Sarah Jenkins,admin@smartcampus.edu,CSE,HOD & Senior Professor,Artificial Intelligence,Ph.D.
+PLC-2021-005,Marcus Vance,placement@smartcampus.edu,CENTRAL,Director of Corporate Relations,Campus Placements,MBA

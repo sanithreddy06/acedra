@@ -1,0 +1,26 @@
+[
+  {
+    "code": "CSE",
+    "name": "Computer Science & Engineering",
+    "hod": "Dr. Sarah Jenkins",
+    "intake": 180
+  },
+  {
+    "code": "AI_DS",
+    "name": "Artificial Intelligence & Data Science",
+    "hod": "Dr. Rajesh Sharma",
+    "intake": 120
+  },
+  {
+    "code": "ECE",
+    "name": "Electronics & Communication Engineering",
+    "hod": "Dr. Michael Chen",
+    "intake": 120
+  },
+  {
+    "code": "MECH",
+    "name": "Mechanical Engineering",
+    "hod": "Dr. Robert Vance",
+    "intake": 60
+  }
+]
