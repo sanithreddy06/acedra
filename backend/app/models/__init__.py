@@ -25,6 +25,14 @@ from app.models.student_intelligence import (
     ImportError,
     SkillCategory,
 )
+from app.models.risk import (
+    RiskRule,
+    RiskAlert,
+    RiskEvaluation,
+    RiskAlertHistory,
+    AlertAssignment,
+    InAppNotification,
+)
 
 __all__ = [
     "Base",
@@ -55,4 +63,10 @@ __all__ = [
     "ImportJob",
     "ImportError",
     "SkillCategory",
+    "RiskRule",
+    "RiskAlert",
+    "RiskEvaluation",
+    "RiskAlertHistory",
+    "AlertAssignment",
+    "InAppNotification",
 ]

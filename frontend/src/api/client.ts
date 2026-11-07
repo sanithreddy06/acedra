@@ -274,6 +274,146 @@ class ApiClient {
     });
     return this.handleResponse(res);
   }
+
+  // --- MODULE 2: Risk Intelligence & Early Warning ---
+  async getRiskRules(category?: string, isActive?: boolean): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (category) params.append('category', category);
+    if (isActive !== undefined) params.append('is_active', String(isActive));
+    const res = await fetch(`${API_BASE}/risk/rules?${params.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createRiskRule(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/rules`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateRiskRule(id: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/rules/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async deleteRiskRule(id: number): Promise<void> {
+    const res = await fetch(`${API_BASE}/risk/rules/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete rule');
+  }
+
+  async triggerRiskEvaluation(studentId?: number, departmentId?: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/evaluate`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ student_id: studentId, department_id: departmentId }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getRiskAlerts(params: Record<string, any> = {}): Promise<{ items: any[]; total: number; skip: number; limit: number }> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.append(k, String(v));
+    });
+    const res = await fetch(`${API_BASE}/risk/alerts?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getRiskAlertDetail(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/alerts/${id}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async acknowledgeAlert(id: number, notes?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/alerts/${id}/acknowledge`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ notes }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addAlertNote(id: number, notes: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/alerts/${id}/notes`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ notes }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async assignAlertMentor(id: number, mentorId: number, notes?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/alerts/${id}/assign`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ mentor_id: mentorId, notes }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async resolveAlert(id: number, resolutionReason: string, reviewNotes?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/alerts/${id}/resolve`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ resolution_reason: resolutionReason, review_notes: reviewNotes }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async reopenAlert(id: number, reason: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/alerts/${id}/reopen`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getRiskStatistics(departmentId?: number): Promise<any> {
+    const params = new URLSearchParams();
+    if (departmentId) params.append('department_id', String(departmentId));
+    const res = await fetch(`${API_BASE}/risk/statistics?${params.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getStudentRiskProfile(studentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/students/${studentId}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getNotifications(unreadOnly: boolean = false): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/risk/notifications?unread_only=${unreadOnly}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async markNotificationRead(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/risk/notifications/${id}/read`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
 }
 
 export const api = new ApiClient();

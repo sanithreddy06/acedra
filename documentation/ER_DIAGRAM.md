@@ -1,6 +1,6 @@
-# Entity-Relationship Model (Module 0 & Module 1 Database Schema)
+# Entity-Relationship Model (Module 0, 1 & 2 Database Schema)
 
-The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, and batch ETL import logs.
+The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, and in-app notifications.
 
 ```mermaid
 erDiagram
@@ -9,6 +9,7 @@ erDiagram
     USERS ||--o| FACULTY : profile
     USERS ||--o| MENTORS : profile
     USERS ||--o{ IMPORT_JOBS : uploads
+    USERS ||--o{ IN_APP_NOTIFICATIONS : receives
     ROLES ||--o{ USERS : assigns
     DEPARTMENTS ||--o{ USERS : members
     DEPARTMENTS ||--o{ SUBJECTS : offers
@@ -33,6 +34,13 @@ erDiagram
     STUDENTS ||--o{ INTERNSHIPS : completes
     STUDENTS ||--o{ HACKATHONS : competes
     IMPORT_JOBS ||--o{ IMPORT_ERRORS : logs
+
+    STUDENTS ||--o{ RISK_ALERTS : flagged
+    RISK_RULES ||--o{ RISK_ALERTS : defines
+    RISK_EVALUATIONS ||--o{ RISK_ALERTS : generated_in
+    RISK_ALERTS ||--o{ RISK_ALERT_HISTORY : audited
+    RISK_ALERTS ||--o{ ALERT_ASSIGNMENTS : assigned
+    MENTORS ||--o{ ALERT_ASSIGNMENTS : assigned_to
 
     USERS {
         int id PK
@@ -86,6 +94,95 @@ erDiagram
         float attendance_percentage
         string placement_status
         int assigned_mentor_id FK
+    }
+
+    RISK_RULES {
+        int id PK
+        string name
+        string code UK
+        string description
+        string category
+        string severity
+        string indicator_type
+        string operator
+        float threshold_value
+        json conditions_config
+        string suggested_action
+        boolean is_active
+        int created_by_id FK
+    }
+
+    RISK_ALERTS {
+        int id PK
+        int student_id FK
+        int rule_id FK
+        int evaluation_id FK
+        string severity
+        string status
+        float observed_value
+        string observed_display
+        float threshold_value
+        string threshold_display
+        string academic_period
+        int subject_id FK
+        datetime detected_date
+        boolean is_system_generated
+        text ai_explanation
+        string suggested_action
+        int assigned_mentor_id FK
+        text review_notes
+        int resolved_by_id FK
+        datetime resolved_at
+        string resolution_reason
+    }
+
+    RISK_EVALUATIONS {
+        int id PK
+        string run_type
+        int initiated_by_id FK
+        int evaluated_students_count
+        int alerts_generated_count
+        int critical_count
+        int high_count
+        int moderate_count
+        int normal_count
+        string status
+        json summary
+        datetime completed_at
+    }
+
+    RISK_ALERT_HISTORY {
+        int id PK
+        int alert_id FK
+        string action
+        string old_status
+        string new_status
+        text notes
+        int performed_by_id FK
+        datetime created_at
+    }
+
+    ALERT_ASSIGNMENTS {
+        int id PK
+        int alert_id FK
+        int mentor_id FK
+        int assigned_by_id FK
+        datetime assigned_at
+        text notes
+        string status
+    }
+
+    IN_APP_NOTIFICATIONS {
+        int id PK
+        int user_id FK
+        string title
+        text message
+        string notification_type
+        string severity
+        int reference_id
+        string reference_type
+        boolean is_read
+        datetime created_at
     }
 
     STUDENT_SEMESTER_RECORDS {

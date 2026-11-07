@@ -231,6 +231,18 @@ class StudentIntelligenceService:
             details={"fields_updated": list(update_dict.keys())}
         )
 
+        # Trigger automatic risk evaluation on student record update
+        try:
+            from app.services.risk_service import RiskService
+            RiskService.evaluate_risk(
+                db=self.db,
+                student_id=student.id,
+                run_type="STUDENT_UPDATE",
+                user_id=current_user.id
+            )
+        except Exception as e:
+            logger.warning(f"Failed to auto-evaluate risk on student update: {e}")
+
         return self._format_student_profile(student)
 
     # 5. Full Individual Student Analytics Dashboard

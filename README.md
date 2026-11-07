@@ -16,6 +16,7 @@ Smart Campus Intelligence is an institutional SaaS platform designed to unify st
 This repository contains:
 - **MODULE 0 — PROJECT FOUNDATION**: Monorepo structure, persistent relational database architecture, role-based access control (RBAC), and enterprise UI foundation.
 - **MODULE 1 — STUDENT INTELLIGENCE & ANALYTICS**: Centralized 360-degree student dossiers, semester-wise academic records, dynamic attendance tracking, continuous internal assessments, verified skill matrix, portfolio & experience showcase, CSV/Excel batch ingestion engine, and role-scoped analytics.
+- **MODULE 2 — AI-ASSISTED RISK IDENTIFICATION**: Configurable rule-based early-warning engine, non-punitive risk categorization, fact-grounded natural language explanations, mentor assignment workflows, audit trail history, and real-time in-app notifications.
 
 > [!NOTE]
 > **Synthetic Demo Data Disclaimer**: All student academic, attendance, marks, skill, project, and certification profiles seeded in this prototype are **synthetic demo data** created for demonstration and testing purposes. They do not represent real-world student records or institutional data.
@@ -55,6 +56,15 @@ Pre-seeded accounts are provided for immediate evaluation. You can log in using 
 - **Faculty & Admin Analytics**: Faculty cohort comparison dashboards and Administrator institutional analytics with Recharts visualizations.
 - **Synthetic Demo Population**: 30 synthetic student records (`1RV22SYN001`–`1RV22SYN030`) across 4 departments (CSE, AI & DS, ECE, MECH) with multi-semester records.
 
+### Module 2: AI-Assisted Risk Identification & Early Warning
+- **Configurable Policy Rules**: 9 canonical risk rules with dynamic thresholds for attendance (<65%, <75%), continuous internal assessments (<40%, <50%), SGPA decline drops (>=1.0), and active backlogs.
+- **Decoupled Evaluation Engine**: Runs automatically on student record updates, on-demand via administrative reassessment, or scheduled batch jobs.
+- **Duplicate Active Alert Prevention**: Updates observed metrics on existing active alerts instead of generating redundant alert records.
+- **Non-Punitive Severity Categorization**: `CRITICAL`, `HIGH`, `MODERATE`, and `NORMAL` severities without labeling students as dropouts or failures.
+- **Fact-Grounded AI Explanations**: Empathetic, objective natural language summaries generated strictly from verified database records.
+- **Alert Workflow & Audit Log**: Transition alerts from `FLAGGED` → `ACKNOWLEDGED` → `UNDER_REVIEW` → `RESOLVED` with documented review notes, mentor assignments, and full immutable audit history.
+- **In-App Notification Dispatch**: Automatically alerts assigned mentors, faculty, and department heads on critical/high-risk alerts.
+
 ---
 
 ## 4. Monorepo Directory Structure
@@ -63,38 +73,41 @@ Pre-seeded accounts are provided for immediate evaluation. You can log in using 
 RIO Prototype v0.1/
 ├── backend/                  # FastAPI Application, Services, Repositories, Alembic
 │   ├── app/
-│   │   ├── api/              # REST Endpoints (Auth, Users, Students, Imports, Analytics)
+│   │   ├── api/              # REST Endpoints (Auth, Users, Students, Imports, Risk, Analytics)
 │   │   ├── core/             # Database connection, Config, Bcrypt Security
-│   │   ├── models/           # SQLAlchemy 2.0 Models (Academic, Profile, Student Intelligence)
+│   │   ├── models/           # SQLAlchemy 2.0 Models (Academic, Profile, Student Intelligence, Risk)
 │   │   ├── repositories/     # Database Query Abstractions
 │   │   ├── schemas/          # Pydantic v2 validation models
-│   │   ├── services/         # Business logic & Dynamic metric computation
+│   │   ├── services/         # StudentService, RiskService, AIExplanationService
 │   │   └── main.py           # Application entrypoint & Middleware
 │   ├── alembic/              # Database schema migrations
-│   ├── tests/                # Automated pytest suite (13 unit and integration tests)
+│   ├── tests/                # Automated pytest suite (20 unit and integration tests)
 │   └── requirements.txt      # Python dependencies
 ├── frontend/                 # React 18 + Vite + TypeScript + Tailwind CSS
 │   ├── src/
-│   │   ├── api/              # Typed REST client
+│   │   ├── api/              # Typed REST client with Module 0, 1 & 2 methods
 │   │   ├── components/
+│   │   │   ├── risk/         # RiskDashboard, AlertDetailModal, RiskRuleConfigModal
 │   │   │   ├── analytics/    # FacultyCohortAnalytics, AdminAnalyticsView
 │   │   │   ├── imports/      # DataImportCenter (CSV/Excel Ingestion)
 │   │   │   ├── students/     # StudentDirectory, StudentProfileModal, StudentFormModal
-│   │   │   └── layout/       # AppLayout, Sidebar, Navbar
+│   │   │   └── layout/       # AppLayout, Sidebar, TopNavbar (Real In-App Notifications)
 │   │   ├── contexts/         # AuthContext & ThemeContext
 │   │   └── types/            # TypeScript definitions
 │   └── package.json
 ├── database/                 # Seeding scripts & vector extension SQL
 │   ├── seeds/
 │   │   ├── seed_data.py      # Base Module 0 seed script
-│   │   └── seed_module1.py   # Module 1 synthetic data generation (30 students)
+│   │   ├── seed_module1.py   # Module 1 synthetic data generation (30 students)
+│   │   └── seed_module2.py   # Module 2 canonical rules & evaluation state
 │   └── init.sql              # pgvector initialization
 ├── datasets/                 # Institutional seed datasets & import templates
 ├── docker/                   # Dockerfiles for Backend and Frontend
 ├── documentation/            # Architecture blueprints, ER diagrams & API specs
 │   ├── MODULE_1_STUDENT_INTELLIGENCE.md
+│   ├── MODULE_2_RISK_IDENTIFICATION.md
 │   ├── ER_DIAGRAM.md
-│   └── screenshots/          # 11 High-resolution UI captures
+│   └── screenshots/          # 15 High-resolution UI captures
 └── docker-compose.yml        # Docker composition for PostgreSQL, Backend, Frontend
 ```
 
@@ -120,6 +133,7 @@ pip install -r requirements.txt
 alembic upgrade head
 python ../database/seeds/seed_data.py
 python ../database/seeds/seed_module1.py
+python ../database/seeds/seed_module2.py
 
 # Launch FastAPI development server
 uvicorn app.main:app --reload --port 8000
@@ -157,27 +171,34 @@ docker-compose up --build
 
 ## 6. Verification & Automated Testing
 
-Execute the automated test suite covering authentication, RBAC, calculated attendance properties, student data isolation, CSV/Excel import validation, and administrative analytics:
+Execute the comprehensive automated test suite covering authentication, RBAC, calculated attendance properties, student data isolation, CSV/Excel import validation, boundary condition testing, SGPA decline detection, duplicate alert prevention, and alert resolution workflows:
 
 ```bash
 cd backend
 .venv/bin/pytest -v
 ```
 
-### Passing Test Suites (13/13 Passed):
+### Passing Test Suites (20/20 Passed):
 1. `test_health_check`: Service availability (`/health`).
 2. `test_login_success_student`: Successful student authentication & JWT token issuance.
 3. `test_login_invalid_password`: Password rejection for invalid credentials.
 4. `test_login_nonexistent_user`: Nonexistent user handling without timing leaks.
 5. `test_user_management_role_protection`: Student blocked from `/users/`, Admin authorized.
 6. `test_dynamic_metrics_generation`: Real-time dynamic metric generation across all 5 user roles.
-7. `test_student_data_isolation`: Student A cannot access Student B's dossier (`403 Forbidden`).
-8. `test_admin_create_and_edit_student`: Admin full CRUD workflow for student profiles.
-9. `test_calculated_attendance_and_analytics_integrity`: Verifies dynamic attendance percentage and SGPA trends.
-10. `test_student_skill_persistence`: Adding skills and verification persistence.
-11. `test_csv_import_preview_validation`: Validation errors on missing required fields during import preview.
-12. `test_faculty_analytics_access`: Faculty authorized cohort metrics.
-13. `test_admin_analytics_access`: Institutional totals and department performance.
+7. `test_rules_retrieval_and_admin_crud`: Configurable rule retrieval and admin CRUD workflows.
+8. `test_attendance_boundary_conditions`: Strict boundary testing (74% triggers alert, 75% exactly does not).
+9. `test_declining_performance_trigger`: Triggers alert when consecutive semester SGPA drops >= 1.0.
+10. `test_healthy_no_trigger_student`: High-performing student with 95% attendance generates zero alerts.
+11. `test_duplicate_alert_prevention`: Evaluating low-attendance student multiple times updates in-place without duplicate alerts.
+12. `test_alert_lifecycle_workflow`: Acknowledge, add note, and resolve with audit history; verifies unauthorized rejection.
+13. `test_student_risk_isolation`: Student restricted to viewing their own risk profile.
+14. `test_student_list_admin_and_student_isolation`: Student listing permissions and isolation.
+15. `test_student_profile_security_isolation`: Cross-student profile access protection.
+16. `test_admin_create_and_edit_student`: Admin full CRUD workflow for student profiles.
+17. `test_calculated_attendance_and_analytics_integrity`: Verifies dynamic attendance percentage and SGPA trends.
+18. `test_student_skill_persistence`: Adding skills and verification persistence.
+19. `test_csv_import_preview_validation`: Validation errors on missing required fields during import preview.
+20. `test_faculty_and_admin_analytics_endpoints`: Faculty cohort and admin institutional analytics access.
 
 ---
 
@@ -198,12 +219,16 @@ High-resolution captures of the implemented interfaces are preserved in `documen
 | `09_data_import_center.png` | CSV/Excel upload zone with live validation preview table. |
 | `10_admin_institutional_analytics.png`| Executive analytics with department CGPA comparisons. |
 | `11_faculty_cohort_analytics.png` | Faculty cohort benchmark comparison charts and student roster. |
+| `12_risk_early_warning_dashboard.png` | Executive early-warning center with severity donut, department bar charts, and alerts roster. |
+| `13_risk_alert_detail_modal.png` | Comprehensive alert detail drawer with quantitative evidence, AI explanation, and action timeline. |
+| `14_risk_policy_rule_configuration.png`| Administrator rule configuration modal for dynamic threshold tuning and active toggling. |
+| `15_student_dossier_early_warning_tab.png`| 360° Student dossier modal featuring the dedicated Early-Warning Alerts tab. |
 
 ---
 
-## 8. Proceeding to Module 2
+## 8. Proceeding to Module 3
 
-With Module 0 and Module 1 fully completed and validated against all acceptance tests:
-- Relational schema and Alembic migrations are synchronized.
-- Student profiles, academic records, and skills taxonomy are persisted and ready to interface with curriculum graphs.
-- The platform is primed for **Module 2: Curriculum Intelligence & AI Syllabus Analysis**, which will ingest course syllabi, build course graph topologies, compute topic overlap, and generate AI-driven industry alignment scores using `pgvector`.
+With Module 0, Module 1, and Module 2 completed and verified against all automated acceptance tests:
+- The persistent relational schema and Alembic migrations are synchronized (`ed88465d2631`).
+- Early warning alerts and historical progression metrics are stored and audited.
+- The platform is primed for **Module 3: Mentorship Intelligence & Targeted Intervention Workflows**, which will introduce scheduled mentor meetings, intervention goal tracking, student reflection logs, and longitudinal recovery outcome metrics.

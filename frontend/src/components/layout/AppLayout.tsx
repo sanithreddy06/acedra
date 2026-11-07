@@ -8,6 +8,7 @@ import { StudentProfileModal } from '../students/StudentProfileModal';
 import { DataImportCenter } from '../imports/DataImportCenter';
 import { FacultyAnalyticsView } from '../analytics/FacultyAnalyticsView';
 import { AdminAnalyticsView } from '../analytics/AdminAnalyticsView';
+import { RiskDashboard } from '../risk/RiskDashboard';
 import { useAuth } from '../../contexts/AuthContext';
 import { EmptyState } from '../common/EmptyState';
 import { ShieldAlert, BookOpen, CalendarCheck, Award, Briefcase, Settings, GraduationCap } from 'lucide-react';
@@ -30,6 +31,43 @@ export const AppLayout: React.FC = () => {
       case 'students':
       case 'directory':
         return <StudentDirectory />;
+
+      // MODULE 2: AI-Assisted Risk Early-Warning Dashboard
+      case 'risk_management':
+        return <RiskDashboard userRole={user?.role} />;
+
+      case 'risk_guidance':
+        if (user?.role === 'student') {
+          const studentId = user.student_id || 1;
+          return (
+            <div className="space-y-4">
+              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center">
+                    <ShieldAlert className="w-5 h-5 mr-2 text-rose-600" />
+                    Early-Warning & Academic Support Guidance
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    View personal transparent indicators and recommended support interventions.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsStudentSelfModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-sm"
+                >
+                  View My Early-Warning Status
+                </button>
+              </div>
+              <RoleDashboardView />
+              <StudentProfileModal
+                studentId={studentId}
+                isOpen={isStudentSelfModalOpen}
+                onClose={() => setIsStudentSelfModalOpen(false)}
+              />
+            </div>
+          );
+        }
+        return <RiskDashboard userRole={user?.role} />;
 
       // MODULE 1: Institutional Admin Analytics
       case 'admin_analytics':
@@ -152,9 +190,11 @@ export const AppLayout: React.FC = () => {
         );
 
       case 'mentees':
-      case 'risk_tracking':
       case 'eligibility':
         return <StudentDirectory />;
+
+      case 'risk_tracking':
+        return <RiskDashboard userRole={user?.role} />;
 
       case 'settings':
       case 'system_settings':

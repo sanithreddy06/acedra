@@ -18,7 +18,9 @@ import {
   AlertTriangle,
   FileText,
   User,
-  Clock
+  Clock,
+  ShieldAlert,
+  Sparkles
 } from 'lucide-react';
 import {
   LineChart,
@@ -56,7 +58,8 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [data, setData] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'assessments' | 'skills' | 'portfolio'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'assessments' | 'skills' | 'portfolio' | 'risk'>('overview');
+  const [riskData, setRiskData] = useState<any | null>(null);
 
   // Add Skill Form state
   const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
@@ -68,8 +71,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const res = await api.getStudentAnalytics(studentId);
-      setData(res);
+      const [analyticsRes, riskRes] = await Promise.all([
+        api.getStudentAnalytics(studentId),
+        api.getStudentRiskProfile(studentId).catch(() => null),
+      ]);
+      setData(analyticsRes);
+      setRiskData(riskRes);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch student intelligence profile');
     } finally {
@@ -160,6 +167,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
               { id: 'assessments', label: 'Continuous Evaluations', icon: BookOpen },
               { id: 'skills', label: 'Skill Matrix', icon: Code },
               { id: 'portfolio', label: 'Projects & Experience', icon: Briefcase },
+              {
+                id: 'risk',
+                label: `Early-Warning Alerts ${riskData?.active_alerts_count ? `(${riskData.active_alerts_count})` : ''}`,
+                icon: ShieldAlert,
+              },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -582,6 +594,135 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB 7: Early-Warning Risk & Support Interventions */}
+          {activeTab === 'risk' && (
+            <div className="space-y-6">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                    Student Early-Warning Status
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Transparent rule-based indicators to guide formative support actions.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-500">Highest Risk Flag:</span>
+                  <Badge
+                    variant={
+                      riskData?.highest_severity === 'CRITICAL'
+                        ? 'danger'
+                        : riskData?.highest_severity === 'HIGH'
+                        ? 'warning'
+                        : riskData?.highest_severity === 'MODERATE'
+                        ? 'brand'
+                        : 'success'
+                    }
+                  >
+                    {riskData?.highest_severity || 'NORMAL'}
+                  </Badge>
+                </div>
+              </div>
+
+              {(!riskData?.alerts || riskData.alerts.length === 0) ? (
+                <div className="p-8 text-center text-xs text-slate-400 space-y-2 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-300">
+                    No active early-warning indicators recorded for this student.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Academic attendance and assessments are currently meeting or exceeding institutional benchmarks.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {riskData.alerts.map((alert: any) => (
+                    <div
+                      key={alert.id}
+                      className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              alert.severity === 'CRITICAL'
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                : alert.severity === 'HIGH'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                            }`}
+                          >
+                            {alert.severity}
+                          </span>
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                            {alert.rule_name}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            ({alert.rule_code})
+                          </span>
+                        </div>
+                        <Badge
+                          variant={
+                            alert.status === 'RESOLVED'
+                              ? 'success'
+                              : alert.status === 'UNDER_REVIEW'
+                              ? 'warning'
+                              : 'danger'
+                          }
+                          size="sm"
+                        >
+                          {alert.status}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Observed Metric</span>
+                          <span className="font-bold text-rose-600 dark:text-rose-400 font-mono">
+                            {alert.observed_display || alert.observed_value}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Configured Threshold</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
+                            {alert.threshold_display || alert.threshold_value}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Assigned Mentor</span>
+                          <span className="font-medium text-brand-600 dark:text-brand-400">
+                            {alert.assigned_mentor_name || 'Unassigned'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Fact-Grounded AI Explanation */}
+                      <div className="p-3 rounded-lg bg-brand-50/50 dark:bg-brand-950/20 border border-brand-100 dark:border-brand-900/50 space-y-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-brand-700 dark:text-brand-300">
+                          <Sparkles className="w-3 h-3 text-brand-600" />
+                          AI Indicator Explanation
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                          {alert.ai_explanation}
+                        </p>
+                      </div>
+
+                      {/* Suggested Action */}
+                      <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2">
+                        <span>
+                          <strong className="text-slate-700 dark:text-slate-300">Suggested Action:</strong> {alert.suggested_action}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Detected: {new Date(alert.detected_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

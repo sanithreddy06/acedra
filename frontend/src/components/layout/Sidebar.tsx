@@ -15,7 +15,8 @@ import {
   Briefcase,
   Compass,
   AlertTriangle,
-  UserCheck
+  UserCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { useAuth, DEMO_CREDENTIALS } from '../../contexts/AuthContext';
@@ -46,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Academic Dashboard', icon: Compass },
           { id: 'profile', label: 'My Intelligence Dossier', icon: GraduationCap, badge: 'Full' },
+          { id: 'risk_guidance', label: 'Early-Warning Status', icon: ShieldAlert },
           { id: 'courses', label: 'My Enrolled Courses', icon: BookOpen },
           { id: 'attendance', label: 'Attendance Intelligence', icon: CalendarCheck },
           { id: 'settings', label: 'Account Settings', icon: Settings },
@@ -54,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Faculty Dashboard', icon: Compass },
           { id: 'faculty_analytics', label: 'Cohort Performance Analytics', icon: Award, badge: 'Live' },
+          { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Alerts' },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'teaching', label: 'Allocated Courses', icon: BookOpen },
           { id: 'settings', label: 'Account Settings', icon: Settings },
@@ -61,14 +64,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'mentor':
         return [
           { id: 'dashboard', label: 'Mentorship Central', icon: Compass },
+          { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Active' },
           { id: 'mentees', label: 'Mentee Roster', icon: Users },
           { id: 'students', label: 'Student Directory', icon: Users },
-          { id: 'risk_tracking', label: 'Academic Risk Radar', icon: AlertTriangle, badge: 'Active' },
           { id: 'settings', label: 'Account Settings', icon: Settings },
         ];
       case 'admin':
         return [
           { id: 'dashboard', label: 'Executive Intelligence', icon: Compass },
+          { id: 'risk_management', label: 'Early-Warning & Risk', icon: ShieldAlert, badge: 'Policy' },
           { id: 'students', label: 'Student Directory', icon: Users, badge: 'Directory' },
           { id: 'admin_analytics', label: 'Institutional Analytics', icon: Award, badge: 'Metrics' },
           { id: 'data_imports', label: 'Data Import Center', icon: FileText, badge: 'CSV/XLS' },

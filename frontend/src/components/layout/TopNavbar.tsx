@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Menu,
   Sun,
@@ -10,11 +10,13 @@ import {
   User as UserIcon,
   LogOut,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Badge } from '../common/Badge';
+import { api } from '../../api/client';
 
 interface TopNavbarProps {
   onToggleSidebar: () => void;
@@ -27,6 +29,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   // Tab display name for breadcrumb
   const formattedTab = currentTab
@@ -34,11 +37,40 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-  const notifications = [
-    { id: 1, title: 'Fall 2026 Academic Term Active', desc: 'Semester 5 curriculum verified & loaded', time: '10m ago', unread: true },
-    { id: 2, title: 'RBAC Authorization Check', desc: 'Role verified successfully for current session', time: '1h ago', unread: false },
-    { id: 3, title: 'Campus Intelligence System', desc: 'Module 0 Foundation initialized in development', time: '2h ago', unread: false },
-  ];
+  const loadNotifications = async () => {
+    try {
+      const data = await api.getNotifications();
+      if (data && data.length > 0) {
+        setNotifications(data);
+      } else {
+        setNotifications([
+          { id: 1, title: 'Fall 2026 Academic Term Active', message: 'Semester 5 curriculum verified & loaded', created_at: new Date().toISOString(), is_read: true },
+          { id: 2, title: 'Early Warning Engine Initialized', message: 'Module 2 rules active for student surveillance', created_at: new Date().toISOString(), is_read: true },
+        ]);
+      }
+    } catch {
+      setNotifications([
+        { id: 1, title: 'Fall 2026 Academic Term Active', message: 'Semester 5 curriculum verified & loaded', created_at: new Date().toISOString(), is_read: true },
+      ]);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      loadNotifications();
+    }
+  }, [user]);
+
+  const handleMarkRead = async (id: number) => {
+    try {
+      await api.markNotificationRead(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 lg:px-8 flex items-center justify-between">
@@ -90,25 +122,40 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
             className="relative p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            )}
           </button>
 
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-80 rounded-2xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 py-3 z-50">
               <div className="px-4 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100">Notifications</span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 dark:bg-brand-900 dark:text-brand-300">
-                  1 New
-                </span>
+                {unreadCount > 0 ? (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                    {unreadCount} New
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">All caught up</span>
+                )}
               </div>
-              <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+              <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
                 {notifications.map((n) => (
-                  <div key={n.id} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                  <div
+                    key={n.id}
+                    onClick={() => handleMarkRead(n.id)}
+                    className={`p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer ${
+                      !n.is_read ? 'bg-brand-50/30 dark:bg-brand-950/20' : ''
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold text-slate-900 dark:text-slate-200">{n.title}</p>
-                      <span className="text-[10px] text-slate-400">{n.time}</span>
+                      {!n.is_read && <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />}
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{n.desc}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">{n.message || n.desc}</p>
+                    <span className="text-[9px] text-slate-400 block mt-1">
+                      {n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (n.time || 'recently')}
+                    </span>
                   </div>
                 ))}
               </div>
