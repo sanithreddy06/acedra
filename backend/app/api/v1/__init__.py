@@ -6,6 +6,8 @@ from app.api.v1.academics import router as academics_router
 from app.api.v1.dashboards import router as dashboards_router
 from app.api.v1.audit_logs import router as audit_logs_router
 from app.api.v1.system_settings import router as settings_router
+from app.api.v1.students import router as students_router
+from app.api.v1.imports import router as imports_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(auth_router)
@@ -15,3 +17,5 @@ api_v1_router.include_router(academics_router)
 api_v1_router.include_router(dashboards_router)
 api_v1_router.include_router(audit_logs_router)
 api_v1_router.include_router(settings_router)
+api_v1_router.include_router(students_router)
+api_v1_router.include_router(imports_router)

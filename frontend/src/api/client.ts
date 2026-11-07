@@ -13,7 +13,6 @@ class ApiClient {
 
   private async handleResponse<T>(response: Response): Promise<T> {
     if (response.status === 401) {
-      // Don't auto-redirect on login attempt failure
       if (!response.url.includes('/auth/login')) {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
@@ -28,6 +27,7 @@ class ApiClient {
     return data as T;
   }
 
+  // --- Auth ---
   async login(email: string, password: string): Promise<{ access_token: string; refresh_token: string; user: User }> {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
@@ -64,11 +64,10 @@ class ApiClient {
     return this.handleResponse(res);
   }
 
+  // --- Users & Departments ---
   async getUsers(role?: string): Promise<User[]> {
     const url = role ? `${API_BASE}/users/?role=${role}` : `${API_BASE}/users/`;
-    const res = await fetch(url, {
-      headers: this.getHeaders(),
-    });
+    const res = await fetch(url, { headers: this.getHeaders() });
     return this.handleResponse(res);
   }
 
@@ -102,6 +101,7 @@ class ApiClient {
     return this.handleResponse(res);
   }
 
+  // --- Password Reset ---
   async requestPasswordReset(email: string): Promise<{ message: string; reset_token?: string }> {
     const res = await fetch(`${API_BASE}/auth/password-reset-request`, {
       method: 'POST',
@@ -116,6 +116,161 @@ class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, new_password }),
+    });
+    return this.handleResponse(res);
+  }
+
+  // ==========================================
+  // MODULE 1: Student Intelligence & Analytics
+  // ==========================================
+
+  async getStudents(params: {
+    skip?: number;
+    limit?: number;
+    search?: string;
+    department_id?: number;
+    semester?: number;
+    section?: string;
+    status?: string;
+  } = {}): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params.skip !== undefined) query.set('skip', params.skip.toString());
+    if (params.limit !== undefined) query.set('limit', params.limit.toString());
+    if (params.search) query.set('search', params.search);
+    if (params.department_id) query.set('department_id', params.department_id.toString());
+    if (params.semester) query.set('semester', params.semester.toString());
+    if (params.section) query.set('section', params.section);
+    if (params.status && params.status !== 'all') query.set('status', params.status);
+
+    const res = await fetch(`${API_BASE}/students/?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getStudentById(studentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createStudent(studentData: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(studentData),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateStudent(studentId: number, studentData: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}`, {
+      method: 'PATCH',
+      headers: this.getHeaders(),
+      body: JSON.stringify(studentData),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getStudentAnalytics(studentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/analytics`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addStudentSkill(studentId: number, skillData: { skill_name: string; category: string; proficiency_level: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/skills`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(skillData),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addStudentCertification(studentId: number, certData: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/certifications`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(certData),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addStudentProject(studentId: number, projectData: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/projects`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(projectData),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addStudentInternship(studentId: number, internData: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/internships`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(internData),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getFacultyAnalytics(): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/analytics/faculty`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getAdminAnalytics(): Promise<any> {
+    const res = await fetch(`${API_BASE}/students/analytics/admin`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  // --- Data Import Center ---
+  async previewImport(file: File, importType: string): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('import_type', importType);
+
+    const token = localStorage.getItem('access_token');
+    const res = await fetch(`${API_BASE}/imports/preview`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    });
+    return this.handleResponse(res);
+  }
+
+  async executeImport(file: File, importType: string): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('import_type', importType);
+
+    const token = localStorage.getItem('access_token');
+    const res = await fetch(`${API_BASE}/imports/execute`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    });
+    return this.handleResponse(res);
+  }
+
+  async downloadTemplate(templateType: string): Promise<Blob> {
+    const token = localStorage.getItem('access_token');
+    const res = await fetch(`${API_BASE}/imports/template/${templateType}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!res.ok) throw new Error('Failed to download template');
+    return res.blob();
+  }
+
+  async getImportJobs(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/imports/jobs`, {
+      headers: this.getHeaders(),
     });
     return this.handleResponse(res);
   }

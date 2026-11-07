@@ -45,31 +45,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'student':
         return [
           { id: 'dashboard', label: 'Academic Dashboard', icon: Compass },
+          { id: 'profile', label: 'My Intelligence Dossier', icon: GraduationCap, badge: 'Full' },
           { id: 'courses', label: 'My Enrolled Courses', icon: BookOpen },
-          { id: 'performance', label: 'Grades & CGPA', icon: Award },
-          { id: 'attendance', label: 'Attendance Log', icon: CalendarCheck },
-          { id: 'mentor', label: 'My Mentor Connect', icon: UserCheck },
+          { id: 'attendance', label: 'Attendance Intelligence', icon: CalendarCheck },
           { id: 'settings', label: 'Account Settings', icon: Settings },
         ];
       case 'faculty':
         return [
           { id: 'dashboard', label: 'Faculty Dashboard', icon: Compass },
+          { id: 'faculty_analytics', label: 'Cohort Performance Analytics', icon: Award, badge: 'Live' },
+          { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'teaching', label: 'Allocated Courses', icon: BookOpen },
-          { id: 'students', label: 'Department Students', icon: Users },
-          { id: 'evaluations', label: 'Continuous Evaluations', icon: Award },
           { id: 'settings', label: 'Account Settings', icon: Settings },
         ];
       case 'mentor':
         return [
           { id: 'dashboard', label: 'Mentorship Central', icon: Compass },
           { id: 'mentees', label: 'Mentee Roster', icon: Users },
+          { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'risk_tracking', label: 'Academic Risk Radar', icon: AlertTriangle, badge: 'Active' },
           { id: 'settings', label: 'Account Settings', icon: Settings },
         ];
       case 'admin':
         return [
           { id: 'dashboard', label: 'Executive Intelligence', icon: Compass },
-          { id: 'users', label: 'User Directory & Roles', icon: Users, badge: 'Admin' },
+          { id: 'students', label: 'Student Directory', icon: Users, badge: 'Directory' },
+          { id: 'admin_analytics', label: 'Institutional Analytics', icon: Award, badge: 'Metrics' },
+          { id: 'data_imports', label: 'Data Import Center', icon: FileText, badge: 'CSV/XLS' },
+          { id: 'users', label: 'User Directory & Roles', icon: Users },
           { id: 'departments', label: 'Academic Structure', icon: Building2 },
           { id: 'audit_logs', label: 'Security & Audit Logs', icon: ShieldCheck },
           { id: 'system_settings', label: 'System Configuration', icon: Settings },
@@ -77,6 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'placement_officer':
         return [
           { id: 'dashboard', label: 'Placement Hub', icon: Compass },
+          { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'eligibility', label: 'Student Eligibility Roster', icon: Award },
           { id: 'recruitment', label: 'Corporate Drives', icon: Briefcase },
           { id: 'reports', label: 'Branch Analytics', icon: FileText },

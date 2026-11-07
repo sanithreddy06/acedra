@@ -11,9 +11,14 @@
 ---
 
 ## 1. Overview
-Smart Campus Intelligence is an institutional platform designed to unify student academic tracking, faculty workload management, mentorship interventions, placement readiness, and executive governance into a single intelligence dashboard.
+Smart Campus Intelligence is an institutional SaaS platform designed to unify student academic tracking, faculty workload management, mentorship interventions, placement readiness, and executive governance into a single intelligence dashboard.
 
-This repository contains **MODULE 0 — PROJECT FOUNDATION**: the complete monorepo, persistent relational database architecture, role-based access control (RBAC), and enterprise UI foundation.
+This repository contains:
+- **MODULE 0 — PROJECT FOUNDATION**: Monorepo structure, persistent relational database architecture, role-based access control (RBAC), and enterprise UI foundation.
+- **MODULE 1 — STUDENT INTELLIGENCE & ANALYTICS**: Centralized 360-degree student dossiers, semester-wise academic records, dynamic attendance tracking, continuous internal assessments, verified skill matrix, portfolio & experience showcase, CSV/Excel batch ingestion engine, and role-scoped analytics.
+
+> [!NOTE]
+> **Synthetic Demo Data Disclaimer**: All student academic, attendance, marks, skill, project, and certification profiles seeded in this prototype are **synthetic demo data** created for demonstration and testing purposes. They do not represent real-world student records or institutional data.
 
 ---
 
@@ -31,41 +36,71 @@ Pre-seeded accounts are provided for immediate evaluation. You can log in using 
 
 ---
 
-## 3. Monorepo Directory Structure
+## 3. Implemented Modules
+
+### Module 0: Project Foundation
+- **Monorepo Architecture**: Clean separation between `frontend/`, `backend/`, `database/`, `datasets/`, `docker/`, and `documentation/`.
+- **Role-Based Access Control**: Strict JWT token validation and role-scoped authorization for 5 distinct roles.
+- **Relational Foundation**: Core schemas for users, roles, departments, faculty, mentors, and audit logs with Alembic migrations.
+- **Enterprise Design System**: Modern Tailwind-styled interface with theme toggling (Light/Dark), responsive sidebars, breadcrumbs, and notification badges.
+
+### Module 1: Student Intelligence & Analytics
+- **360° Student Dossiers**: Deep profiles tracking personal information, SRN, admission batch, program, status, guardian details, and blood group.
+- **Academic Progression**: Semester-wise SGPA and CGPA progression graphs with historical backlog tracking.
+- **Calculated Attendance Intelligence**: Attendance percentages computed dynamically from raw class counts (`(attended / total) * 100`) rather than arbitrary percentages.
+- **Continuous Internal Assessments (CIA)**: Assignment marks, quizzes, and internal exam scoring with subject benchmarks.
+- **Structured Skill Taxonomy**: Technical skills (Languages, Frameworks, Databases, Cloud) and soft skills tagged with proficiency and verification flags (reusable by Module 4).
+- **Portfolio & Experience**: Certifications, hackathon participations, industry internships, and academic projects with repository links.
+- **Batch CSV & Excel Ingestion**: Full ETL upload center with template downloads, column mapping, duplicate USN/email detection, row-level validation errors, and audit history.
+- **Faculty & Admin Analytics**: Faculty cohort comparison dashboards and Administrator institutional analytics with Recharts visualizations.
+- **Synthetic Demo Population**: 30 synthetic student records (`1RV22SYN001`–`1RV22SYN030`) across 4 departments (CSE, AI & DS, ECE, MECH) with multi-semester records.
+
+---
+
+## 4. Monorepo Directory Structure
 
 ```
 RIO Prototype v0.1/
 ├── backend/                  # FastAPI Application, Services, Repositories, Alembic
 │   ├── app/
-│   │   ├── api/              # REST Endpoints (Auth, Users, Academics, Dashboards)
+│   │   ├── api/              # REST Endpoints (Auth, Users, Students, Imports, Analytics)
 │   │   ├── core/             # Database connection, Config, Bcrypt Security
-│   │   ├── models/           # SQLAlchemy 2.0 Entity Models
+│   │   ├── models/           # SQLAlchemy 2.0 Models (Academic, Profile, Student Intelligence)
 │   │   ├── repositories/     # Database Query Abstractions
 │   │   ├── schemas/          # Pydantic v2 validation models
 │   │   ├── services/         # Business logic & Dynamic metric computation
 │   │   └── main.py           # Application entrypoint & Middleware
 │   ├── alembic/              # Database schema migrations
-│   ├── tests/                # Automated pytest suite
+│   ├── tests/                # Automated pytest suite (13 unit and integration tests)
 │   └── requirements.txt      # Python dependencies
 ├── frontend/                 # React 18 + Vite + TypeScript + Tailwind CSS
 │   ├── src/
 │   │   ├── api/              # Typed REST client
-│   │   ├── components/       # Layouts, Role Dashboards, User Management
+│   │   ├── components/
+│   │   │   ├── analytics/    # FacultyCohortAnalytics, AdminAnalyticsView
+│   │   │   ├── imports/      # DataImportCenter (CSV/Excel Ingestion)
+│   │   │   ├── students/     # StudentDirectory, StudentProfileModal, StudentFormModal
+│   │   │   └── layout/       # AppLayout, Sidebar, Navbar
 │   │   ├── contexts/         # AuthContext & ThemeContext
 │   │   └── types/            # TypeScript definitions
 │   └── package.json
 ├── database/                 # Seeding scripts & vector extension SQL
-│   ├── seeds/seed_data.py    # Database population script
+│   ├── seeds/
+│   │   ├── seed_data.py      # Base Module 0 seed script
+│   │   └── seed_module1.py   # Module 1 synthetic data generation (30 students)
 │   └── init.sql              # pgvector initialization
-├── datasets/                 # Institutional seed datasets (CSV/JSON)
+├── datasets/                 # Institutional seed datasets & import templates
 ├── docker/                   # Dockerfiles for Backend and Frontend
 ├── documentation/            # Architecture blueprints, ER diagrams & API specs
+│   ├── MODULE_1_STUDENT_INTELLIGENCE.md
+│   ├── ER_DIAGRAM.md
+│   └── screenshots/          # 11 High-resolution UI captures
 └── docker-compose.yml        # Docker composition for PostgreSQL, Backend, Frontend
 ```
 
 ---
 
-## 4. Quickstart Guide
+## 5. Quickstart Guide
 
 ### Option A: Local Development (Instant)
 
@@ -81,9 +116,10 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Run migrations and seed the database
+# Run migrations and seed data
 alembic upgrade head
 python ../database/seeds/seed_data.py
+python ../database/seeds/seed_module1.py
 
 # Launch FastAPI development server
 uvicorn app.main:app --reload --port 8000
@@ -119,27 +155,55 @@ docker-compose up --build
 
 ---
 
-## 5. Verification & Testing
+## 6. Verification & Automated Testing
 
-Execute the automated test suite to verify token issuance, password security, role permissions, and dynamic metric calculation:
+Execute the automated test suite covering authentication, RBAC, calculated attendance properties, student data isolation, CSV/Excel import validation, and administrative analytics:
 
 ```bash
 cd backend
 .venv/bin/pytest -v
 ```
 
-All 6 test suites verify:
-1. Health check availability (`/health`).
-2. Successful student authentication and token receipt.
-3. Password rejection for invalid credentials.
-4. Nonexistent user handling without timing leaks.
-5. Role-based access control (Student blocked from `/users/`, Admin allowed).
-6. Real-time dynamic metric generation across all 5 user roles.
+### Passing Test Suites (13/13 Passed):
+1. `test_health_check`: Service availability (`/health`).
+2. `test_login_success_student`: Successful student authentication & JWT token issuance.
+3. `test_login_invalid_password`: Password rejection for invalid credentials.
+4. `test_login_nonexistent_user`: Nonexistent user handling without timing leaks.
+5. `test_user_management_role_protection`: Student blocked from `/users/`, Admin authorized.
+6. `test_dynamic_metrics_generation`: Real-time dynamic metric generation across all 5 user roles.
+7. `test_student_data_isolation`: Student A cannot access Student B's dossier (`403 Forbidden`).
+8. `test_admin_create_and_edit_student`: Admin full CRUD workflow for student profiles.
+9. `test_calculated_attendance_and_analytics_integrity`: Verifies dynamic attendance percentage and SGPA trends.
+10. `test_student_skill_persistence`: Adding skills and verification persistence.
+11. `test_csv_import_preview_validation`: Validation errors on missing required fields during import preview.
+12. `test_faculty_analytics_access`: Faculty authorized cohort metrics.
+13. `test_admin_analytics_access`: Institutional totals and department performance.
 
 ---
 
-## 6. Proceeding to Module 1
-With Module 0 complete:
-- The persistent relational schema is migrated and verified.
-- The 5 user roles and navigation structures are functional.
-- The platform is primed for **Module 1 (Curriculum Intelligence & AI Syllabus Analysis)** to introduce vector embeddings into `pgvector` and course graph analytics.
+## 7. UI Screenshot Gallery
+
+High-resolution captures of the implemented interfaces are preserved in `documentation/screenshots/`:
+
+| Screenshot | Description |
+| :--- | :--- |
+| `01_login_screen.png` | Role-based authentication portal with 1-click demo presets. |
+| `02_student_directory.png` | Directory table with department/semester filters and search. |
+| `03_student_profile_overview.png` | 360° Student Dossier modal header with KPI metrics and quick actions. |
+| `04_student_academic_progression.png`| Semester-wise SGPA Recharts line chart and backlog tracker. |
+| `05_student_attendance_intelligence.png` | Calculated attendance status with subject threshold progress bars. |
+| `06_student_assessments.png` | Continuous internal evaluation marks and component breakdowns. |
+| `07_student_skill_matrix.png` | Categorized technical and soft skills with inline skill adder. |
+| `08_student_portfolio_experience.png`| Certifications, hackathons, and internship project cards. |
+| `09_data_import_center.png` | CSV/Excel upload zone with live validation preview table. |
+| `10_admin_institutional_analytics.png`| Executive analytics with department CGPA comparisons. |
+| `11_faculty_cohort_analytics.png` | Faculty cohort benchmark comparison charts and student roster. |
+
+---
+
+## 8. Proceeding to Module 2
+
+With Module 0 and Module 1 fully completed and validated against all acceptance tests:
+- Relational schema and Alembic migrations are synchronized.
+- Student profiles, academic records, and skills taxonomy are persisted and ready to interface with curriculum graphs.
+- The platform is primed for **Module 2: Curriculum Intelligence & AI Syllabus Analysis**, which will ingest course syllabi, build course graph topologies, compute topic overlap, and generate AI-driven industry alignment scores using `pgvector`.
