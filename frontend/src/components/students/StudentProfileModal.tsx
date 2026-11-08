@@ -59,9 +59,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [data, setData] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'assessments' | 'skills' | 'portfolio' | 'risk' | 'recommendations'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'assessments' | 'skills' | 'portfolio' | 'risk' | 'recommendations' | 'placement'>('overview');
   const [riskData, setRiskData] = useState<any | null>(null);
   const [recData, setRecData] = useState<any | null>(null);
+  const [readinessData, setReadinessData] = useState<any | null>(null);
 
   // Add Skill Form state
   const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
@@ -73,14 +74,16 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const [analyticsRes, riskRes, recRes] = await Promise.all([
+      const [analyticsRes, riskRes, recRes, placeRes] = await Promise.all([
         api.getStudentAnalytics(studentId),
         api.getStudentRiskProfile(studentId).catch(() => null),
         api.getStudentLearningPath(studentId).catch(() => null),
+        api.getPlacementReadiness(studentId).catch(() => null),
       ]);
       setData(analyticsRes);
       setRiskData(riskRes);
       setRecData(recRes);
+      setReadinessData(placeRes);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch student intelligence profile');
     } finally {
@@ -180,6 +183,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                 id: 'recommendations',
                 label: `Recommendations ${recData?.total_recommendations ? `(${recData.total_recommendations})` : ''}`,
                 icon: Compass,
+              },
+              {
+                id: 'placement',
+                label: `Placement Readiness ${readinessData?.readiness_score ? `(${readinessData.readiness_score}%)` : ''}`,
+                icon: Award,
               },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -824,6 +832,140 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 9: Placement Readiness & Skill Gap */}
+          {activeTab === 'placement' && (
+            <div className="space-y-4">
+              {!readinessData ? (
+                <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                  <Award className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-300">No placement readiness dossier generated yet</p>
+                  <p className="text-xs text-slate-400 mt-1">Configure student skills or select a benchmark role to calculate readiness.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Disclaimer banner */}
+                  <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-start gap-2.5">
+                    <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                      <strong>Prototype Indicator Notice:</strong> {readinessData.disclaimer || 'Readiness scores and skill-gap metrics are advisory indicators designed for student development and do not constitute employer-certified placement guarantees.'}
+                    </p>
+                  </div>
+
+                  {/* Summary Metric Header */}
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-indigo-50/50 dark:from-slate-900 dark:to-indigo-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Benchmark Career Role</span>
+                      <h4 className="text-base font-bold text-slate-900 dark:text-white mt-0.5">{readinessData.career_role_title}</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Evaluated {readinessData.total_skills_evaluated} required competencies &bull; {readinessData.evaluation_timestamp ? new Date(readinessData.evaluation_timestamp).toLocaleDateString() : ''}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Readiness Score</span>
+                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                          {readinessData.readiness_score}%
+                        </span>
+                      </div>
+                      <Badge
+                        variant={
+                          readinessData.readiness_tier === 'READY'
+                            ? 'success'
+                            : readinessData.readiness_tier === 'NEAR_READY'
+                            ? 'brand'
+                            : readinessData.readiness_tier === 'DEVELOPING'
+                            ? 'warning'
+                            : 'slate'
+                        }
+                        size="md"
+                      >
+                        {readinessData.readiness_tier?.replace(/_/g, ' ')}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* 4 Quick Stat KPIs */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Matched Skills</span>
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{readinessData.matched_skills_count}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Below Level</span>
+                      <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{readinessData.below_proficiency_count}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Missing Skills</span>
+                      <p className="text-lg font-bold text-rose-600 dark:text-rose-400">{readinessData.missing_skills_count}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Mandatory Met</span>
+                      <p className={`text-lg font-bold ${readinessData.mandatory_skills_met ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        {readinessData.mandatory_skills_met ? 'Yes (All Met)' : 'No (Deficit)'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Competency Gap List */}
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Competency Gap Analysis ({readinessData.skill_gap_analysis?.length || 0})
+                    </h5>
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {readinessData.skill_gap_analysis?.map((item: any) => (
+                        <div
+                          key={item.skill_id}
+                          className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white">{item.skill_name}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
+                                {item.category}
+                              </span>
+                              {item.is_mandatory && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                  MANDATORY
+                                </span>
+                              )}
+                              {item.requires_verification && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                  NEEDS EVIDENCE
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Current: <span className="font-semibold text-slate-700 dark:text-slate-300">{item.student_proficiency || 'Not acquired'}</span>
+                              {' '}&bull; Target: <span className="font-semibold text-slate-700 dark:text-slate-300">{item.required_proficiency}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto">
+                            <Badge
+                              variant={
+                                item.status === 'MATCHED'
+                                  ? 'success'
+                                  : item.status === 'REQUIRES_VERIFICATION'
+                                  ? 'brand'
+                                  : item.status === 'BELOW_PROFICIENCY'
+                                  ? 'warning'
+                                  : 'danger'
+                              }
+                              size="sm"
+                            >
+                              {item.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

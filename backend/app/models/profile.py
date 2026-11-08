@@ -54,6 +54,8 @@ class Student(Base, TimestampMixin):
     hackathons = relationship("Hackathon", back_populates="student", cascade="all, delete-orphan")
     risk_alerts = relationship("RiskAlert", back_populates="student", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="student", cascade="all, delete-orphan")
+    skill_evidences = relationship("SkillEvidence", back_populates="student", cascade="all, delete-orphan")
+    applications = relationship("StudentApplication", back_populates="student", cascade="all, delete-orphan")
 
 
 class Faculty(Base, TimestampMixin):

@@ -10,6 +10,8 @@ import { FacultyAnalyticsView } from '../analytics/FacultyAnalyticsView';
 import { AdminAnalyticsView } from '../analytics/AdminAnalyticsView';
 import { RiskDashboard } from '../risk/RiskDashboard';
 import { RecommendationsView } from '../recommendations/RecommendationsView';
+import { PlacementReadinessDashboard } from '../placement/PlacementReadinessDashboard';
+import { PlacementOfficerConsole } from '../placement/PlacementOfficerConsole';
 import { useAuth } from '../../contexts/AuthContext';
 import { EmptyState } from '../common/EmptyState';
 import { ShieldAlert, BookOpen, CalendarCheck, Award, Briefcase, Settings, GraduationCap } from 'lucide-react';
@@ -32,6 +34,13 @@ export const AppLayout: React.FC = () => {
       case 'students':
       case 'directory':
         return <StudentDirectory />;
+
+      // MODULE 4: Skill Gap & Placement Readiness
+      case 'placement_readiness':
+        return <PlacementReadinessDashboard />;
+
+      case 'recruitment':
+        return <PlacementOfficerConsole />;
 
       // MODULE 3: Personalized Recommendation Engine
       case 'recommendations':

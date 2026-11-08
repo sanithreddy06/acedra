@@ -1,6 +1,6 @@
-# Entity-Relationship Model (Module 0, 1, 2 & 3 Database Schema)
+# Entity-Relationship Model (Module 0, 1, 2, 3 & 4 Database Schema)
 
-The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, in-app notifications, approved resource catalogues, personalized recommendations, multi-resource links, progress milestone tracking, and student feedback ratings.
+The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, in-app notifications, approved resource catalogues, personalized recommendations, multi-resource links, progress milestone tracking, student feedback ratings, career role benchmarks, competency weights, skill evidence submissions, corporate recruitment opportunities, multi-factor eligibility checks, and student application pipelines.
 
 ```mermaid
 erDiagram
@@ -48,6 +48,14 @@ erDiagram
     RECOMMENDATIONS ||--o{ RECOMMENDATION_PROGRESS : tracks
     RECOMMENDATIONS ||--o| RECOMMENDATION_FEEDBACK : rates
     USERS ||--o{ RECOMMENDATIONS : suggested_by_mentor
+
+    STUDENT_SKILLS ||--o{ SKILL_EVIDENCE : verified_by_evidence
+    CAREER_ROLES ||--o{ ROLE_SKILLS : defines_requirements
+    SKILLS ||--o{ ROLE_SKILLS : benchmarked_in
+    CAREER_ROLES ||--o{ PLACEMENT_OPPORTUNITIES : associated_with
+    PLACEMENT_OPPORTUNITIES ||--o{ OPPORTUNITY_REQUIREMENTS : specifies
+    PLACEMENT_OPPORTUNITIES ||--o{ STUDENT_APPLICATIONS : candidate_applications
+    STUDENTS ||--o{ STUDENT_APPLICATIONS : submits_applications
 
     USERS {
         int id PK
@@ -474,5 +482,81 @@ erDiagram
         text comments
         boolean outcome_achieved
         datetime submitted_at
+    }
+
+    SKILL_EVIDENCE {
+        int id PK
+        int student_skill_id FK
+        int student_id FK
+        string evidence_type
+        string title
+        string url
+        string verification_status
+        int verified_by FK
+        datetime verified_at
+        text verification_notes
+        datetime submitted_at
+    }
+
+    CAREER_ROLES {
+        int id PK
+        string code UK
+        string title
+        text description
+        string industry_sector
+        float target_readiness_threshold
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+    }
+
+    ROLE_SKILLS {
+        int id PK
+        int role_id FK
+        int skill_id FK
+        string required_proficiency
+        string importance
+        float weight
+        boolean is_mandatory
+    }
+
+    PLACEMENT_OPPORTUNITIES {
+        int id PK
+        int career_role_id FK
+        string company_name
+        string role_title
+        string job_type
+        string location
+        string ctc_range
+        float min_cgpa
+        int max_backlogs_allowed
+        float min_attendance_pct
+        json eligible_departments
+        json eligible_semesters
+        datetime application_deadline
+        string status
+        datetime created_at
+        datetime updated_at
+    }
+
+    OPPORTUNITY_REQUIREMENTS {
+        int id PK
+        int opportunity_id FK
+        int skill_id FK
+        string min_proficiency
+        boolean is_mandatory
+    }
+
+    STUDENT_APPLICATIONS {
+        int id PK
+        int opportunity_id FK
+        int student_id FK
+        string application_status
+        float readiness_score_at_apply
+        string resume_url
+        text cover_statement
+        text feedback_notes
+        datetime applied_at
+        datetime updated_at
     }
 ```

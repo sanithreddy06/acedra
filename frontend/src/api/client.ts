@@ -540,6 +540,130 @@ class ApiClient {
     });
     return this.handleResponse(res);
   }
+
+  // --- MODULE 4: Skill Gap & Placement Readiness ---
+  async getPlacementSkills(category?: string): Promise<any[]> {
+    const query = category ? `?category=${encodeURIComponent(category)}` : '';
+    const res = await fetch(`${API_BASE}/placement/skills${query}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getStudentPlacementSkills(studentId: number): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/placement/students/${studentId}/skills`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addOrUpdateStudentPlacementSkill(studentId: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/students/${studentId}/skills`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async submitSkillEvidence(studentId: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/students/${studentId}/evidence`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async verifySkillEvidence(evidenceId: number, data: { verification_status: string; verification_feedback?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/evidence/${evidenceId}/verify`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getCareerRoles(isActive?: boolean): Promise<any[]> {
+    const query = isActive !== undefined ? `?is_active=${isActive}` : '';
+    const res = await fetch(`${API_BASE}/placement/roles${query}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createCareerRole(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/roles`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getPlacementReadiness(studentId: number, role?: string): Promise<any> {
+    const query = role ? `?role=${encodeURIComponent(role)}` : '';
+    const res = await fetch(`${API_BASE}/placement/readiness/${studentId}${query}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getPlacementOpportunities(params: Record<string, any> = {}): Promise<any[]> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.append(k, String(v));
+    });
+    const res = await fetch(`${API_BASE}/placement/opportunities?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createPlacementOpportunity(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/opportunities`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getStudentMatchingOpportunities(studentId: number): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/placement/students/${studentId}/matching-opportunities`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async applyToOpportunity(data: { opportunity_id: number; resume_url?: string; cover_notes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/applications`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getPlacementApplications(params: Record<string, any> = {}): Promise<any[]> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.append(k, String(v));
+    });
+    const res = await fetch(`${API_BASE}/placement/applications?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updatePlacementApplicationStatus(applicationId: number, data: { status: string; reviewer_notes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/placement/applications/${applicationId}/status`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
 }
 
 export const api = new ApiClient();

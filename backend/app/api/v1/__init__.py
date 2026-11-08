@@ -10,6 +10,7 @@ from app.api.v1.students import router as students_router
 from app.api.v1.imports import router as imports_router
 from app.api.v1.risk import router as risk_router
 from app.api.v1.recommendations import router as recommendations_router
+from app.api.v1.placement import router as placement_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(auth_router)
@@ -23,3 +24,4 @@ api_v1_router.include_router(students_router)
 api_v1_router.include_router(imports_router)
 api_v1_router.include_router(risk_router)
 api_v1_router.include_router(recommendations_router)
+api_v1_router.include_router(placement_router)

@@ -39,6 +39,7 @@ class StudentSkill(Base, TimestampMixin):
     student = relationship("Student", back_populates="skills")
     skill = relationship("Skill", back_populates="student_skills")
     verified_by = relationship("Faculty")
+    evidence_records = relationship("SkillEvidence", back_populates="student_skill", cascade="all, delete-orphan")
 
 
 class Certification(Base, TimestampMixin):

@@ -40,6 +40,14 @@ from app.models.recommendation import (
     RecommendationProgress,
     RecommendationFeedback,
 )
+from app.models.placement import (
+    SkillEvidence,
+    CareerRole,
+    RoleSkill,
+    PlacementOpportunity,
+    OpportunityRequirement,
+    StudentApplication,
+)
 
 __all__ = [
     "Base",
@@ -81,4 +89,10 @@ __all__ = [
     "Recommendation",
     "RecommendationProgress",
     "RecommendationFeedback",
+    "SkillEvidence",
+    "CareerRole",
+    "RoleSkill",
+    "PlacementOpportunity",
+    "OpportunityRequirement",
+    "StudentApplication",
 ]
