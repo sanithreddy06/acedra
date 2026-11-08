@@ -20,7 +20,8 @@ import {
   User,
   Clock,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  Compass
 } from 'lucide-react';
 import {
   LineChart,
@@ -58,8 +59,9 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [data, setData] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'assessments' | 'skills' | 'portfolio' | 'risk'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'academics' | 'attendance' | 'assessments' | 'skills' | 'portfolio' | 'risk' | 'recommendations'>('overview');
   const [riskData, setRiskData] = useState<any | null>(null);
+  const [recData, setRecData] = useState<any | null>(null);
 
   // Add Skill Form state
   const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
@@ -71,12 +73,14 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const [analyticsRes, riskRes] = await Promise.all([
+      const [analyticsRes, riskRes, recRes] = await Promise.all([
         api.getStudentAnalytics(studentId),
         api.getStudentRiskProfile(studentId).catch(() => null),
+        api.getStudentLearningPath(studentId).catch(() => null),
       ]);
       setData(analyticsRes);
       setRiskData(riskRes);
+      setRecData(recRes);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch student intelligence profile');
     } finally {
@@ -171,6 +175,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                 id: 'risk',
                 label: `Early-Warning Alerts ${riskData?.active_alerts_count ? `(${riskData.active_alerts_count})` : ''}`,
                 icon: ShieldAlert,
+              },
+              {
+                id: 'recommendations',
+                label: `Recommendations ${recData?.total_recommendations ? `(${recData.total_recommendations})` : ''}`,
+                icon: Compass,
               },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -721,6 +730,100 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 8: Personalized Recommendations & Learning Path */}
+          {activeTab === 'recommendations' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <Compass className="w-4 h-4 text-indigo-600" />
+                    Student Learning Roadmap & Recommendations
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Grounded in academic records, skill gap analysis, and career goals.
+                  </p>
+                </div>
+                {recData?.career_goals && recData.career_goals.length > 0 && (
+                  <Badge variant="brand" size="sm">
+                    Target: {recData.career_goals.join(', ')}
+                  </Badge>
+                )}
+              </div>
+
+              {(!recData || recData.total_recommendations === 0) ? (
+                <div className="p-8 text-center text-xs text-slate-400 space-y-2 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-300">
+                    No active recommendations generated yet.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Visit the Personalized Recommendations tab to run evaluation against catalogue items.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Academic Improvement Plan Section */}
+                  {recData.academic_improvement_plan?.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5" />
+                        Academic Improvement Plan ({recData.academic_improvement_plan.length})
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {recData.academic_improvement_plan.map((item: any) => (
+                          <div key={item.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                {item.priority}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-500">{item.status}</span>
+                            </div>
+                            <h6 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">{item.title}</h6>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">{item.reason}</p>
+                            {item.resource_url && (
+                              <a href={item.resource_url} target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1 font-medium">
+                                View Material <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Career Development Plan Section */}
+                  {recData.career_development_plan?.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5" />
+                        Career Development Plan ({recData.career_development_plan.length})
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {recData.career_development_plan.map((item: any) => (
+                          <div key={item.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                                {item.category?.replace(/_/g, ' ')}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-500">{item.status}</span>
+                            </div>
+                            <h6 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">{item.title}</h6>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">{item.reason}</p>
+                            {item.resource_url && (
+                              <a href={item.resource_url} target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1 font-medium">
+                                View Course <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

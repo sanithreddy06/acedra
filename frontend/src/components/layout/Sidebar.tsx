@@ -47,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Academic Dashboard', icon: Compass },
           { id: 'profile', label: 'My Intelligence Dossier', icon: GraduationCap, badge: 'Full' },
+          { id: 'recommendations', label: 'Personalized Roadmap', icon: Award, badge: 'M3' },
           { id: 'risk_guidance', label: 'Early-Warning Status', icon: ShieldAlert },
           { id: 'courses', label: 'My Enrolled Courses', icon: BookOpen },
           { id: 'attendance', label: 'Attendance Intelligence', icon: CalendarCheck },
@@ -57,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
           { id: 'dashboard', label: 'Faculty Dashboard', icon: Compass },
           { id: 'faculty_analytics', label: 'Cohort Performance Analytics', icon: Award, badge: 'Live' },
           { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Alerts' },
+          { id: 'recommendations', label: 'Student Guidance & Roadmaps', icon: BookOpen, badge: 'M3' },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'teaching', label: 'Allocated Courses', icon: BookOpen },
           { id: 'settings', label: 'Account Settings', icon: Settings },
@@ -65,6 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Mentorship Central', icon: Compass },
           { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Active' },
+          { id: 'recommendations', label: 'Mentee Recommendations', icon: Award, badge: 'M3' },
           { id: 'mentees', label: 'Mentee Roster', icon: Users },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'settings', label: 'Account Settings', icon: Settings },
@@ -73,6 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Executive Intelligence', icon: Compass },
           { id: 'risk_management', label: 'Early-Warning & Risk', icon: ShieldAlert, badge: 'Policy' },
+          { id: 'recommendations', label: 'Recommendation Catalogue', icon: Award, badge: 'M3' },
           { id: 'students', label: 'Student Directory', icon: Users, badge: 'Directory' },
           { id: 'admin_analytics', label: 'Institutional Analytics', icon: Award, badge: 'Metrics' },
           { id: 'data_imports', label: 'Data Import Center', icon: FileText, badge: 'CSV/XLS' },
@@ -84,6 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'placement_officer':
         return [
           { id: 'dashboard', label: 'Placement Hub', icon: Compass },
+          { id: 'recommendations', label: 'Placement Readiness Plans', icon: Award, badge: 'M3' },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'eligibility', label: 'Student Eligibility Roster', icon: Award },
           { id: 'recruitment', label: 'Corporate Drives', icon: Briefcase },

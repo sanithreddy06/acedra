@@ -414,6 +414,132 @@ class ApiClient {
     });
     return this.handleResponse(res);
   }
+
+  // --- MODULE 3: Personalized Recommendation Engine ---
+  async getRecommendationCatalogue(params: Record<string, any> = {}): Promise<any[]> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.append(k, String(v));
+    });
+    const res = await fetch(`${API_BASE}/recommendations/catalogue?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createCatalogueItem(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/catalogue`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateCatalogueItem(id: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/catalogue/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async deleteCatalogueItem(id: number): Promise<void> {
+    const res = await fetch(`${API_BASE}/recommendations/catalogue/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete catalogue item');
+  }
+
+  async generateRecommendations(studentId: number, force: boolean = false): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/recommendations/generate/${studentId}?force_regenerate=${force}`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getRecommendations(params: Record<string, any> = {}): Promise<any[]> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.append(k, String(v));
+    });
+    const res = await fetch(`${API_BASE}/recommendations/?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getStudentLearningPath(studentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/students/${studentId}/learning-path`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateStudentCareerProfile(studentId: number, data: { career_goals: string[]; interests: string[] }): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/students/${studentId}/career-profile`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async acceptRecommendation(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/${id}/accept`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async rejectRecommendation(id: number, reason: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/${id}/reject`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ rejection_reason: reason }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateRecommendationProgress(id: number, data: { status: string; percent_complete: number; notes?: string; hours_spent?: number }): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/${id}/progress`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async submitRecommendationFeedback(id: number, data: { rating: number; helpful: boolean; relevance_score: number; comments?: string; outcome_achieved: boolean }): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/${id}/feedback`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async suggestMentorRecommendation(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/suggest`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addMentorGuidance(id: number, notes: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/recommendations/${id}/guidance`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ guidance_notes: notes }),
+    });
+    return this.handleResponse(res);
+  }
 }
 
 export const api = new ApiClient();

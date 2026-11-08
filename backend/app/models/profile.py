@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Float, Date, Text
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Float, Date, Text, JSON
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.base import TimestampMixin
@@ -23,6 +23,10 @@ class Student(Base, TimestampMixin):
     attendance_percentage = Column(Float, default=100.0, nullable=False)
     placement_status = Column(String(50), default="Eligible", nullable=False)  # Eligible, Placed, Ineligible
     assigned_mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=True)
+
+    # Module 3 Career & Interests
+    career_goals = Column(JSON, default=list, nullable=True)  # e.g., ["AI/ML Engineer", "Cloud Architect"]
+    interests = Column(JSON, default=list, nullable=True)     # e.g., ["Deep Learning", "Robotics", "Competitive Programming"]
 
     # Personal profile details
     gender = Column(String(20), nullable=True)
@@ -49,6 +53,7 @@ class Student(Base, TimestampMixin):
     internships = relationship("Internship", back_populates="student", cascade="all, delete-orphan")
     hackathons = relationship("Hackathon", back_populates="student", cascade="all, delete-orphan")
     risk_alerts = relationship("RiskAlert", back_populates="student", cascade="all, delete-orphan")
+    recommendations = relationship("Recommendation", back_populates="student", cascade="all, delete-orphan")
 
 
 class Faculty(Base, TimestampMixin):

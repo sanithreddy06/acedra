@@ -1,6 +1,6 @@
-# Entity-Relationship Model (Module 0, 1 & 2 Database Schema)
+# Entity-Relationship Model (Module 0, 1, 2 & 3 Database Schema)
 
-The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, and in-app notifications.
+The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, in-app notifications, approved resource catalogues, personalized recommendations, multi-resource links, progress milestone tracking, and student feedback ratings.
 
 ```mermaid
 erDiagram
@@ -41,6 +41,13 @@ erDiagram
     RISK_ALERTS ||--o{ RISK_ALERT_HISTORY : audited
     RISK_ALERTS ||--o{ ALERT_ASSIGNMENTS : assigned
     MENTORS ||--o{ ALERT_ASSIGNMENTS : assigned_to
+
+    STUDENTS ||--o{ RECOMMENDATIONS : receives
+    RECOMMENDATION_CATALOGUE ||--o{ RECOMMENDATIONS : catalogue_ref
+    RECOMMENDATIONS ||--o{ RECOMMENDATION_RESOURCES : contains
+    RECOMMENDATIONS ||--o{ RECOMMENDATION_PROGRESS : tracks
+    RECOMMENDATIONS ||--o| RECOMMENDATION_FEEDBACK : rates
+    USERS ||--o{ RECOMMENDATIONS : suggested_by_mentor
 
     USERS {
         int id PK
@@ -398,5 +405,74 @@ erDiagram
         string category
         int updated_by FK
         datetime updated_at
+    }
+
+    RECOMMENDATION_CATALOGUE {
+        int id PK
+        string title
+        string category
+        text description
+        string required_skill
+        string target_audience
+        string difficulty_level
+        string resource_url
+        string estimated_duration
+        json eligibility_conditions
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+    }
+
+    RECOMMENDATIONS {
+        int id PK
+        int student_id FK
+        int catalogue_id FK
+        string category
+        string title
+        text reason
+        string related_gap
+        text expected_outcome
+        string priority
+        string status
+        string source
+        int suggested_by FK
+        text mentor_guidance
+        string resource_url
+        string suggested_completion_time
+        datetime accepted_at
+        datetime completed_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    RECOMMENDATION_RESOURCES {
+        int id PK
+        int recommendation_id FK
+        string title
+        string resource_type
+        string url
+        string description
+        int sequence_order
+    }
+
+    RECOMMENDATION_PROGRESS {
+        int id PK
+        int recommendation_id FK
+        int percent_complete
+        string status_update
+        text notes
+        float hours_spent
+        datetime logged_at
+    }
+
+    RECOMMENDATION_FEEDBACK {
+        int id PK
+        int recommendation_id FK
+        int rating
+        boolean helpful
+        int relevance_score
+        text comments
+        boolean outcome_achieved
+        datetime submitted_at
     }
 ```

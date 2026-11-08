@@ -17,6 +17,7 @@ This repository contains:
 - **MODULE 0 — PROJECT FOUNDATION**: Monorepo structure, persistent relational database architecture, role-based access control (RBAC), and enterprise UI foundation.
 - **MODULE 1 — STUDENT INTELLIGENCE & ANALYTICS**: Centralized 360-degree student dossiers, semester-wise academic records, dynamic attendance tracking, continuous internal assessments, verified skill matrix, portfolio & experience showcase, CSV/Excel batch ingestion engine, and role-scoped analytics.
 - **MODULE 2 — AI-ASSISTED RISK IDENTIFICATION**: Configurable rule-based early-warning engine, non-punitive risk categorization, fact-grounded natural language explanations, mentor assignment workflows, audit trail history, and real-time in-app notifications.
+- **MODULE 3 — PERSONALISED RECOMMENDATION ENGINE**: Transparent rule-based learning roadmap generator, 11 recommendation categories, approved resource catalogue, career goal skill gap analysis, Academic vs. Career segmented plans, progress tracking, 5-star student feedback ratings, and mentor coaching workflows.
 
 > [!NOTE]
 > **Synthetic Demo Data Disclaimer**: All student academic, attendance, marks, skill, project, and certification profiles seeded in this prototype are **synthetic demo data** created for demonstration and testing purposes. They do not represent real-world student records or institutional data.
@@ -64,6 +65,14 @@ Pre-seeded accounts are provided for immediate evaluation. You can log in using 
 - **Fact-Grounded AI Explanations**: Empathetic, objective natural language summaries generated strictly from verified database records.
 - **Alert Workflow & Audit Log**: Transition alerts from `FLAGGED` → `ACKNOWLEDGED` → `UNDER_REVIEW` → `RESOLVED` with documented review notes, mentor assignments, and full immutable audit history.
 - **In-App Notification Dispatch**: Automatically alerts assigned mentors, faculty, and department heads on critical/high-risk alerts.
+
+### Module 3: Personalised Recommendation Engine
+- **11 Recommendation Categories**: Complete coverage of Subject Improvement, Study Resources, Learning Courses, Programming Practice, Technical Certifications, Soft Skill Development, Exam Prep, Project Suggestions, Internship Prep, Placement Prep, and Hackathons.
+- **Approved Resource Catalogue**: 11 administrator-curated verified items with validated links, difficulty tiers, prerequisites, and durations.
+- **Transparent Rule-Based Grounding**: Suggestions strictly derive from verified weak subjects (<50%), skill gaps matched against career goals (Full Stack, AI/ML, Cloud, Data, Cyber), and pre-final/final year placement horizons (Semesters 5–8).
+- **Dual Plan Architecture**: Automatically categorizes items into an **Academic Improvement Plan** and a **Career Development Plan**.
+- **Lifecycle & Feedback Loop**: Full status state machine (`SUGGESTED` → `ACCEPTED` / `REJECTED` → `IN_PROGRESS` → `COMPLETED`) with progress tracking (0–100%) and 5-star ratings with qualitative feedback.
+- **Mentor Collaboration**: Allows faculty and mentors to assign custom recommendations with personalized coaching guidance notes.
 
 ---
 
@@ -178,7 +187,7 @@ cd backend
 .venv/bin/pytest -v
 ```
 
-### Passing Test Suites (20/20 Passed):
+### Passing Test Suites (27/27 Passed):
 1. `test_health_check`: Service availability (`/health`).
 2. `test_login_success_student`: Successful student authentication & JWT token issuance.
 3. `test_login_invalid_password`: Password rejection for invalid credentials.
@@ -199,6 +208,13 @@ cd backend
 18. `test_student_skill_persistence`: Adding skills and verification persistence.
 19. `test_csv_import_preview_validation`: Validation errors on missing required fields during import preview.
 20. `test_faculty_and_admin_analytics_endpoints`: Faculty cohort and admin institutional analytics access.
+21. `test_weak_subject_performance_recommendation`: Weak subject marks (<50%) trigger remedial course and exam prep recommendations.
+22. `test_missing_technical_skills_recommendation`: Career goal missing skill gap analysis triggers approved courses and certifications.
+23. `test_career_goal_learning_path`: Segmented Academic Improvement and Career Development plans.
+24. `test_healthy_profile_recommendations`: High-performing students receive advanced capstones and hackathons without remedial courses.
+25. `test_recommendation_lifecycle_and_feedback`: Status machine (`SUGGESTED` → `ACCEPTED` → `IN_PROGRESS` → `COMPLETED`) and 5-star feedback logging.
+26. `test_mentor_suggest_and_guidance`: Mentor custom resource recommendation with coaching guidance.
+27. `test_unauthorized_access_protection`: Multi-tenant security isolation preventing students from accessing other students' learning plans.
 
 ---
 
@@ -223,12 +239,16 @@ High-resolution captures of the implemented interfaces are preserved in `documen
 | `13_risk_alert_detail_modal.png` | Comprehensive alert detail drawer with quantitative evidence, AI explanation, and action timeline. |
 | `14_risk_policy_rule_configuration.png`| Administrator rule configuration modal for dynamic threshold tuning and active toggling. |
 | `15_student_dossier_early_warning_tab.png`| 360° Student dossier modal featuring the dedicated Early-Warning Alerts tab. |
+| `16_recommendations_dashboard.png` | Personalized Recommendation Engine dashboard with Academic & Career split plans, KPIs, and career target banner. |
+| `17_recommendation_detail_modal.png` | Grounded recommendation detail modal with gap analysis, progress tracking slider, and 5-star feedback review. |
+| `18_career_goals_interests_modal.png` | Student career goal selection modal (AI/ML Engineer, Full Stack, Cloud) and interest tag manager. |
+| `19_catalogue_browser_modal.png` | Approved Resource Catalogue browser modal with category filters, difficulty tags, and verified external links. |
 
 ---
 
-## 8. Proceeding to Module 3
+## 8. Proceeding to Module 4
 
-With Module 0, Module 1, and Module 2 completed and verified against all automated acceptance tests:
-- The persistent relational schema and Alembic migrations are synchronized (`ed88465d2631`).
-- Early warning alerts and historical progression metrics are stored and audited.
-- The platform is primed for **Module 3: Mentorship Intelligence & Targeted Intervention Workflows**, which will introduce scheduled mentor meetings, intervention goal tracking, student reflection logs, and longitudinal recovery outcome metrics.
+With Module 0, Module 1, Module 2, and Module 3 completed and verified against all automated acceptance tests:
+- The persistent relational schema and Alembic migrations are synchronized (`e33f06c9e0a9`).
+- Grounded recommendation catalogues, learning paths, progress milestones, and feedback loops are active and audited.
+- The platform is primed for **Module 4 — Placement Readiness & Skill Verification**, which will build upon student skill matrices, career paths, and recommendation progress to calculate placement readiness scores and corporate drive eligibility.

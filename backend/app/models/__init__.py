@@ -33,6 +33,13 @@ from app.models.risk import (
     AlertAssignment,
     InAppNotification,
 )
+from app.models.recommendation import (
+    RecommendationCatalogue,
+    RecommendationResource,
+    Recommendation,
+    RecommendationProgress,
+    RecommendationFeedback,
+)
 
 __all__ = [
     "Base",
@@ -69,4 +76,9 @@ __all__ = [
     "RiskAlertHistory",
     "AlertAssignment",
     "InAppNotification",
+    "RecommendationCatalogue",
+    "RecommendationResource",
+    "Recommendation",
+    "RecommendationProgress",
+    "RecommendationFeedback",
 ]

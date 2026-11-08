@@ -9,6 +9,7 @@ import { DataImportCenter } from '../imports/DataImportCenter';
 import { FacultyAnalyticsView } from '../analytics/FacultyAnalyticsView';
 import { AdminAnalyticsView } from '../analytics/AdminAnalyticsView';
 import { RiskDashboard } from '../risk/RiskDashboard';
+import { RecommendationsView } from '../recommendations/RecommendationsView';
 import { useAuth } from '../../contexts/AuthContext';
 import { EmptyState } from '../common/EmptyState';
 import { ShieldAlert, BookOpen, CalendarCheck, Award, Briefcase, Settings, GraduationCap } from 'lucide-react';
@@ -31,6 +32,10 @@ export const AppLayout: React.FC = () => {
       case 'students':
       case 'directory':
         return <StudentDirectory />;
+
+      // MODULE 3: Personalized Recommendation Engine
+      case 'recommendations':
+        return <RecommendationsView />;
 
       // MODULE 2: AI-Assisted Risk Early-Warning Dashboard
       case 'risk_management':
