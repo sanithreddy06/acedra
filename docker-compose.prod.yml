@@ -1,0 +1,109 @@
+# ==============================================================================
+# Production Docker Compose for Smart Campus Intelligence Platform
+# Integrates:
+# - PostgreSQL 16 with pgvector extension
+# - Production Gunicorn/Uvicorn FastAPI Backend
+# - Production Nginx React Frontend with Reverse Proxy, SSL-ready, & Rate Limiting
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: smart_campus_prod_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-campus_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_campus_production}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - campus_backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-campus_admin} -d ${POSTGRES_DB:-smart_campus_production}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend.prod
+    container_name: smart_campus_prod_backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-campus_admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-smart_campus_production}
+      - SECRET_KEY=${SECRET_KEY:?JWT secret key must be configured in .env.production}
+      - ENVIRONMENT=production
+      - CORS_ORIGINS=["http://localhost","http://localhost:80","https://campus.institution.edu"]
+      - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      - RATE_LIMIT_DEFAULT=120/minute
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - document_storage:/app/storage/documents
+    networks:
+      - campus_backend_net
+      - campus_frontend_net
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend.prod
+    container_name: smart_campus_prod_frontend
+    restart: always
+    ports:
+      - "80:80"
+    networks:
+      - campus_frontend_net
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+volumes:
+  postgres_prod_data:
+    name: smart_campus_postgres_prod_data
+  document_storage:
+    name: smart_campus_document_storage
+
+networks:
+  campus_backend_net:
+    driver: bridge
+    internal: true
+  campus_frontend_net:
+    driver: bridge

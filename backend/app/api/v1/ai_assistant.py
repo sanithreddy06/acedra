@@ -259,17 +259,31 @@ async def upload_document(
     Upload and index a campus document (PDF, DOCX, TXT, MD) into pgvector / semantic embeddings.
     Accessible to Administrators and authorized campus officers.
     """
+    filename = file.filename or "uploaded_document.txt"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    allowed_exts = {"pdf", "docx", "txt", "md"}
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file format '.{ext}'. Only PDF, DOCX, TXT, and Markdown files are accepted.",
+        )
+
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(file_bytes) > 15 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document exceeds maximum permitted file size of 15MB.",
+        )
 
     return AIAssistantService.process_and_index_document(
         db=db,
         title=title,
         category=category,
         file_bytes=file_bytes,
-        file_name=file.filename or "uploaded_document",
-        file_type=file.filename.split(".")[-1] if file.filename and "." in file.filename else "txt",
+        file_name=filename,
+        file_type=ext,
         description=description,
         access_permission=access_permission,
         created_by_user_id=current_user.id,

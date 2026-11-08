@@ -726,9 +726,23 @@ class StudentIntelligenceService:
             raise HTTPException(status_code=403, detail="Data import requires administrator privileges.")
 
         filename = file.filename or "uploaded_data.csv"
-        is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
+        # Security: extension whitelist
+        allowed_exts = (".csv", ".xlsx", ".xls")
+        if not any(filename.lower().endswith(ext) for ext in allowed_exts):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import."
+            )
 
         content = await file.read()
+        # Security: maximum 10MB file size limit
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size exceeds maximum permitted limit (10MB)."
+            )
+
+        is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
         rows, columns = self._parse_file_rows(content, is_excel)
 
         # Validate rows
@@ -820,9 +834,23 @@ class StudentIntelligenceService:
             raise HTTPException(status_code=403, detail="Administrator privileges required.")
 
         filename = file.filename or "import_data.csv"
-        is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
+        # Security: extension whitelist
+        allowed_exts = (".csv", ".xlsx", ".xls")
+        if not any(filename.lower().endswith(ext) for ext in allowed_exts):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import."
+            )
 
         content = await file.read()
+        # Security: maximum 10MB file size limit
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size exceeds maximum permitted limit (10MB)."
+            )
+
+        is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
         rows, _ = self._parse_file_rows(content, is_excel)
 
         job = ImportJob(

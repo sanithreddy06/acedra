@@ -1,0 +1,42 @@
+# ==============================================================================
+# Production Dockerfile for Smart Campus Intelligence Frontend (React + Vite)
+# Multi-stage build with optimized Nginx web server
+# ==============================================================================
+
+# Stage 1: Build Frontend Assets
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies using cached layers
+COPY frontend/package*.json ./
+RUN npm ci || npm install
+
+# Build static assets
+COPY frontend/ .
+RUN npm run build
+
+# Stage 2: Serve with Hardened Nginx
+FROM nginx:1.27-alpine AS runner
+
+# Remove default configuration and HTML
+RUN rm -rf /etc/nginx/conf.d/* /usr/share/nginx/html/*
+
+# Copy custom Nginx configuration
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+
+# Copy production static build artifacts
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Set secure permissions
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx:nginx /var/run/nginx.pid /var/cache/nginx /var/log/nginx
+
+EXPOSE 80
+
+HEALTHCHECK --interval=20s --timeout=5s --retries=3 \
+    CMD wget -q --spider http://127.0.0.1/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

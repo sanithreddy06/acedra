@@ -7,9 +7,10 @@ __pycache__/
 backend/.venv/
 .env
 
-# SQLite
+# SQLite & Backups
 *.db
 *.sqlite3
+database/backups/*.gz
 
 # Node / Frontend
 node_modules/

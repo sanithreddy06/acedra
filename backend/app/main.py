@@ -9,6 +9,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
+import time
+from sqlalchemy import text
 from app.core.database import Base, engine, SessionLocal
 from app.api.v1 import api_v1_router
 # Import all models to ensure they are registered with Base.metadata
@@ -56,6 +58,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Security and Performance Middleware
+@app.middleware("http")
+async def add_security_headers_and_timing(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration_ms = round((time.time() - start_time) * 1000, 2)
+    
+    # Performance metric header
+    response.headers["X-Process-Time-Ms"] = str(duration_ms)
+    
+    # Production security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if settings.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        
+    return response
 
 
 # Centralized error handling
@@ -109,7 +132,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Health check endpoints
+# Health and Readiness check endpoints
 @app.get("/health", tags=["Health"])
 @app.get("/api/health", tags=["Health"])
 def health_check():
@@ -118,6 +141,29 @@ def health_check():
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT
+    }
+
+
+@app.get("/ready", tags=["Health"])
+@app.get("/api/ready", tags=["Health"])
+def readiness_check():
+    """Readiness probe to verify database connectivity."""
+    db_status = "connected"
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"unhealthy: {str(e)}"
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "not_ready", "database": db_status}
+        )
+
+    return {
+        "status": "ready",
+        "service": settings.PROJECT_NAME,
+        "database": db_status,
+        "version": settings.VERSION
     }
 
 

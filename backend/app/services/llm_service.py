@@ -118,6 +118,19 @@ class LLMService:
         """Handle Mode A queries: General Educational or Grounded University Policy."""
         q_lower = query.lower()
 
+        # Privacy & Student Records Protection in Public Mode A
+        private_indicators = [
+            "student record", "student records", "grades of", "marks of", "phone number", "cgpa of", "sgpa of",
+            "usn of", "profile of", "transcript of", "attendance of", "alex mercer", "other students", "student details",
+            "personal record", "confidential", "contact info", "student info"
+        ]
+        if any(term in q_lower for term in private_indicators) or ("student" in q_lower and any(w in q_lower for w in ["grade", "mark", "gpa", "phone", "usn", "record", "score", "attendance", "profile"])):
+            return (
+                "**Privacy & Confidentiality Notice**: Public Mode A cannot access private student records, "
+                "personal grades, or confidential student profiles. To view your personal academic information, "
+                "please log in with your university credentials to use the authenticated **Personal Assistant (Mode B)**."
+            )
+
         # Check if query is asking about university policies or regulations
         is_campus_query = any(k in q_lower for k in [
             "attendance", "reva", "condonation", "regulation", "cgpa", "sgpa", "exam", "grading",
