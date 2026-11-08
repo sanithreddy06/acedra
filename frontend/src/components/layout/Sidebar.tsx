@@ -16,7 +16,10 @@ import {
   Compass,
   AlertTriangle,
   UserCheck,
-  ShieldAlert
+  ShieldAlert,
+  Sparkles,
+  Bot,
+  Database
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { useAuth, DEMO_CREDENTIALS } from '../../contexts/AuthContext';
@@ -46,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'student':
         return [
           { id: 'dashboard', label: 'Academic Dashboard', icon: Compass },
+          { id: 'campus_ai', label: 'Smart Campus AI', icon: Sparkles, badge: 'M5' },
           { id: 'profile', label: 'My Intelligence Dossier', icon: GraduationCap, badge: 'Full' },
           { id: 'placement_readiness', label: 'Placement Readiness', icon: Briefcase, badge: 'M4' },
           { id: 'recommendations', label: 'Personalized Roadmap', icon: Award, badge: 'M3' },
@@ -57,6 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'faculty':
         return [
           { id: 'dashboard', label: 'Faculty Dashboard', icon: Compass },
+          { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
           { id: 'faculty_analytics', label: 'Cohort Performance Analytics', icon: Award, badge: 'Live' },
           { id: 'placement_readiness', label: 'Placement Readiness Radar', icon: Briefcase, badge: 'M4' },
           { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Alerts' },
@@ -68,6 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'mentor':
         return [
           { id: 'dashboard', label: 'Mentorship Central', icon: Compass },
+          { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
           { id: 'placement_readiness', label: 'Mentee Placement Readiness', icon: Briefcase, badge: 'M4' },
           { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Active' },
           { id: 'recommendations', label: 'Mentee Recommendations', icon: Award, badge: 'M3' },
@@ -78,6 +84,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'admin':
         return [
           { id: 'dashboard', label: 'Executive Intelligence', icon: Compass },
+          { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
+          { id: 'rag_documents', label: 'RAG Knowledge Base', icon: Database, badge: 'M5' },
           { id: 'placement_readiness', label: 'Placement Hub & Roles', icon: Briefcase, badge: 'M4' },
           { id: 'risk_management', label: 'Early-Warning & Risk', icon: ShieldAlert, badge: 'Policy' },
           { id: 'recommendations', label: 'Recommendation Catalogue', icon: Award, badge: 'M3' },
@@ -92,6 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
       case 'placement_officer':
         return [
           { id: 'dashboard', label: 'Placement Hub', icon: Compass },
+          { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
           { id: 'recruitment', label: 'Corporate Drives & Opps', icon: Briefcase, badge: 'M4' },
           { id: 'placement_readiness', label: 'Student Readiness Hub', icon: Award, badge: 'M4' },
           { id: 'recommendations', label: 'Placement Readiness Plans', icon: Award, badge: 'M3' },

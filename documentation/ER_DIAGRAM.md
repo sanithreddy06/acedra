@@ -1,6 +1,6 @@
-# Entity-Relationship Model (Module 0, 1, 2, 3 & 4 Database Schema)
+# Entity-Relationship Model (Module 0, 1, 2, 3, 4 & 5 Database Schema)
 
-The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, in-app notifications, approved resource catalogues, personalized recommendations, multi-resource links, progress milestone tracking, student feedback ratings, career role benchmarks, competency weights, skill evidence submissions, corporate recruitment opportunities, multi-factor eligibility checks, and student application pipelines.
+The core relational database model powers user authentication, role hierarchies, departmental structures, academic curricula, student 360-degree intelligence dossiers, dynamic attendance counts, continuous assessments, skills taxonomies, portfolio records, batch ETL import logs, configurable risk policy rules, early-warning alerts, alert assignment workflows, audit histories, in-app notifications, approved resource catalogues, personalized recommendations, multi-resource links, progress milestone tracking, student feedback ratings, career role benchmarks, competency weights, skill evidence submissions, corporate recruitment opportunities, multi-factor eligibility checks, student application pipelines, RAG knowledge documents, text chunks, vector embeddings, access permission rules, dual-mode conversations, grounded message citations, and user satisfaction feedback.
 
 ```mermaid
 erDiagram
@@ -56,6 +56,13 @@ erDiagram
     PLACEMENT_OPPORTUNITIES ||--o{ OPPORTUNITY_REQUIREMENTS : specifies
     PLACEMENT_OPPORTUNITIES ||--o{ STUDENT_APPLICATIONS : candidate_applications
     STUDENTS ||--o{ STUDENT_APPLICATIONS : submits_applications
+
+    DOCUMENTS ||--o{ DOCUMENT_CHUNKS : chunks
+    DOCUMENTS ||--o{ DOCUMENT_ACCESS_RULES : permissions
+    USERS ||--o{ DOCUMENTS : creates
+    CONVERSATIONS ||--o{ MESSAGES : contains
+    MESSAGES ||--o{ CONVERSATION_FEEDBACK : feedback
+    USERS ||--o{ CONVERSATIONS : initiates
 
     USERS {
         int id PK
@@ -558,5 +565,80 @@ erDiagram
         text feedback_notes
         datetime applied_at
         datetime updated_at
+    }
+
+    DOCUMENTS {
+        int id PK
+        string title
+        string category
+        text description
+        string file_name
+        string file_type
+        int file_size_bytes
+        string file_hash
+        text content_raw
+        int chunk_count
+        string access_permission
+        boolean is_active
+        datetime indexed_at
+        int created_by FK
+        datetime created_at
+        datetime updated_at
+    }
+
+    DOCUMENT_CHUNKS {
+        int id PK
+        int document_id FK
+        int chunk_index
+        text content
+        int token_count
+        string section_heading
+        int page_number
+        json metadata_json
+        json embedding_vector
+        datetime created_at
+    }
+
+    DOCUMENT_ACCESS_RULES {
+        int id PK
+        int document_id FK
+        string role_name
+        boolean can_read
+        boolean can_edit
+        int department_id FK
+        datetime created_at
+        datetime updated_at
+    }
+
+    CONVERSATIONS {
+        int id PK
+        string session_id UK
+        int user_id FK
+        string mode
+        string title
+        boolean is_pinned
+        datetime created_at
+        datetime updated_at
+    }
+
+    MESSAGES {
+        int id PK
+        int conversation_id FK
+        string role
+        text content
+        json sources_json
+        int token_count
+        float processing_time_ms
+        datetime created_at
+    }
+
+    CONVERSATION_FEEDBACK {
+        int id PK
+        int conversation_id FK
+        int message_id FK
+        int user_id FK
+        boolean is_helpful
+        text feedback_text
+        datetime created_at
     }
 ```

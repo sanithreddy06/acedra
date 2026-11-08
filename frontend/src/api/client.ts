@@ -664,6 +664,128 @@ class ApiClient {
     });
     return this.handleResponse(res);
   }
+
+  // =========================================================================
+  // --- Module 5: Conversational AI & RAG Knowledge Base ---
+  // =========================================================================
+
+  async getSuggestedQuestions(mode: string = 'PUBLIC_MODE_A'): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/ai/suggested-questions?mode=${mode}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createAIConversation(payload: { mode: string; title?: string; session_id?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/conversations`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getAIConversations(sessionId?: string): Promise<any[]> {
+    const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+    const res = await fetch(`${API_BASE}/ai/conversations${query}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getAIConversation(conversationId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/conversations/${conversationId}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async deleteAIConversation(conversationId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/conversations/${conversationId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async sendAIMessage(conversationId: number, content: string, studentId?: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ content, student_id: studentId }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async submitMessageFeedback(messageId: number, isHelpful: boolean, feedbackText?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/messages/${messageId}/feedback`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ is_helpful: isHelpful, feedback_text: feedbackText }),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getRAGDocuments(category?: string, search?: string): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (category) params.append('category', category);
+    if (search) params.append('search', search);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE}/ai/documents${query}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getDocumentDetails(documentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/documents/${documentId}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async uploadRAGDocument(formData: FormData): Promise<any> {
+    const token = localStorage.getItem('access_token');
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${API_BASE}/ai/documents/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    return this.handleResponse(res);
+  }
+
+  async createTextDocument(data: { title: string; category: string; description?: string; access_permission: string; content_raw: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/documents/text`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async reindexRAGDocument(documentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/documents/${documentId}/reindex`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async deleteRAGDocument(documentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/documents/${documentId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async searchRAG(query: string, topK: number = 4): Promise<any> {
+    const res = await fetch(`${API_BASE}/ai/rag/search?q=${encodeURIComponent(query)}&top_k=${topK}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
 }
 
 export const api = new ApiClient();

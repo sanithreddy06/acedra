@@ -19,6 +19,7 @@ This repository contains:
 - **MODULE 2 — AI-ASSISTED RISK IDENTIFICATION**: Configurable rule-based early-warning engine, non-punitive risk categorization, fact-grounded natural language explanations, mentor assignment workflows, audit trail history, and real-time in-app notifications.
 - **MODULE 3 — PERSONALISED RECOMMENDATION ENGINE**: Transparent rule-based learning roadmap generator, 11 recommendation categories, approved resource catalogue, career goal skill gap analysis, Academic vs. Career segmented plans, progress tracking, 5-star student feedback ratings, and mentor coaching workflows.
 - **MODULE 4 — SKILL GAP & PLACEMENT READINESS**: Weighted competency gap scoring against 7 canonical industry roles, explicit self-reported vs. verified evidence workflows (repositories, live URLs, credentials), advisory prototype non-guarantee disclaimers, campus recruitment drive management, multi-factor eligibility verification algorithms, and candidate pipeline tracking.
+- **MODULE 5 — CONVERSATIONAL AI ASSISTANT**: Dual-mode conversational intelligence featuring Mode A (Public Campus Assistant with RAG-grounded official university policy citations and safe refusal against hallucinations) and Mode B (Authenticated Personal Student Assistant analyzing verified CGPA, dynamic attendance, CIA marks, risk alerts, and custom study schedules), supported by an Administrator RAG Document Knowledge Base.
 
 > [!NOTE]
 > **Synthetic Demo Data Disclaimer**: All student academic, attendance, marks, skill, project, and certification profiles seeded in this prototype are **synthetic demo data** created for demonstration and testing purposes. They do not represent real-world student records or institutional data.
@@ -86,6 +87,16 @@ Pre-seeded accounts are provided for immediate evaluation. You can log in using 
 - **Application Pipeline Workflow**: End-to-end recruitment tracking (`APPLIED` → `SHORTLISTED` → `INTERVIEW_SCHEDULED` → `OFFERED` / `REJECTED`).
 - **Student Placement Dossier Tab**: Direct integration into the student 360-degree modal and dedicated standalone hub.
 
+### Module 5: Conversational AI Assistant & RAG Knowledge Base
+- **Dual-Mode Interactive Interface**: Integrated single-panel interface supporting Mode A (Public University Guide) and Mode B (Personal Student Assistant) with real-time mode switching.
+- **Mode A (Public University Guide)**: Answers official regulations, attendance condonations, grading formulas, examination rules, and placement policies without requiring login.
+- **Mode B (Personal Student Assistant)**: Authenticated AI assistant retrieving authorized student metrics (CGPA, attendance, CIA marks, active risk alerts, target career readiness, and custom weekly study plans).
+- **Strict Privacy & Anti-Tampering Barriers**: Unauthenticated requests to personal records rejected (HTTP 401); cross-student access attempts blocked (HTTP 403 Forbidden).
+- **RAG Knowledge Base & pgvector Retrieval**: Section-aware text chunking with 128-dimensional dense semantic embeddings and hybrid cosine/lexical ranking.
+- **Response Grounding & Anti-Hallucination**: Multi-source citations displaying document title, section heading, page number, and similarity score with safe refusal on missing policies.
+- **AI Safety & Prompt Injection Defenses**: Active detection and neutralization of system prompt extraction, rule overrides, and untrusted document instructions.
+- **Administrator Document Management Console**: Upload, chunk, index, search, and manage PDF, DOCX, TXT, and Markdown knowledge files with live retrieval testing.
+
 ---
 
 ## 4. Monorepo Directory Structure
@@ -94,20 +105,21 @@ Pre-seeded accounts are provided for immediate evaluation. You can log in using 
 RIO Prototype v0.1/
 ├── backend/                  # FastAPI Application, Services, Repositories, Alembic
 │   ├── app/
-│   │   ├── api/              # REST Endpoints (Auth, Users, Students, Imports, Risk, Recs, Placement)
+│   │   ├── api/              # REST Endpoints (Auth, Users, Students, Imports, Risk, Recs, Placement, AI)
 │   │   ├── core/             # Database connection, Config, Bcrypt Security
-│   │   ├── models/           # SQLAlchemy 2.0 Models (Academic, Profile, Risk, Recommendations, Placement)
+│   │   ├── models/           # SQLAlchemy 2.0 Models (Academic, Profile, Risk, Recs, Placement, AI)
 │   │   ├── repositories/     # Database Query Abstractions
 │   │   ├── schemas/          # Pydantic v2 validation models
-│   │   ├── services/         # PlacementService, RecommendationService, RiskService, StudentService
+│   │   ├── services/         # AIAssistantService, LLMService, EmbeddingService, StudentContextService
 │   │   └── main.py           # Application entrypoint & Middleware
 │   ├── alembic/              # Database schema migrations
-│   ├── tests/                # Automated pytest suite (34 unit and integration tests across 5 modules)
+│   ├── tests/                # Automated pytest suite (44 unit and integration tests across 6 modules)
 │   └── requirements.txt      # Python dependencies
 ├── frontend/                 # React 18 + Vite + TypeScript + Tailwind CSS
 │   ├── src/
-│   │   ├── api/              # Typed REST client with Modules 0, 1, 2, 3 & 4 methods
+│   │   ├── api/              # Typed REST client with Modules 0, 1, 2, 3, 4 & 5 methods
 │   │   ├── components/
+│   │   │   ├── chat/         # CampusAIChatInterface, RAGDocumentManager
 │   │   │   ├── placement/    # PlacementReadinessDashboard, PlacementOfficerConsole, Modals
 │   │   │   ├── recommendations/ # RecommendationHub, Modals, Feedbacks
 │   │   │   ├── risk/         # RiskDashboard, AlertDetailModal, RiskRuleConfigModal
@@ -124,7 +136,8 @@ RIO Prototype v0.1/
 │   │   ├── seed_module1.py   # Module 1 synthetic data generation (30 students)
 │   │   ├── seed_module2.py   # Module 2 canonical rules & evaluation state
 │   │   ├── seed_module3.py   # Module 3 recommendation catalogue & demo goals
-│   │   └── seed_module4.py   # Module 4 career roles, skills, corporate drives & applications
+│   │   ├── seed_module4.py   # Module 4 career roles, skills, corporate drives & applications
+│   │   └── seed_module5.py   # Module 5 canonical RAG documents & demo sessions
 │   └── init.sql              # pgvector initialization
 ├── datasets/                 # Institutional seed datasets & import templates
 ├── docker/                   # Dockerfiles for Backend and Frontend
@@ -133,21 +146,11 @@ RIO Prototype v0.1/
 │   ├── MODULE_2_RISK_IDENTIFICATION.md
 │   ├── MODULE_3_RECOMMENDATIONS.md
 │   ├── MODULE_4_SKILL_GAP_PLACEMENT.md
+│   ├── MODULE_5_CONVERSATIONAL_AI.md
 │   ├── ER_DIAGRAM.md
-│   └── screenshots/          # 23 High-resolution UI captures (01–23)
+│   └── screenshots/          # 27 High-resolution UI captures (01–27)
 └── docker-compose.yml        # Docker composition for PostgreSQL, Backend, Frontend
-├── frontend/                 # React 18 + Vite + TypeScript + Tailwind CSS
-│   ├── src/
-│   │   ├── api/              # Typed REST client with Module 0, 1 & 2 methods
-│   │   ├── components/
-│   │   │   ├── risk/         # RiskDashboard, AlertDetailModal, RiskRuleConfigModal
-│   │   │   ├── analytics/    # FacultyCohortAnalytics, AdminAnalyticsView
-│   │   │   ├── imports/      # DataImportCenter (CSV/Excel Ingestion)
-│   │   │   ├── students/     # StudentDirectory, StudentProfileModal, StudentFormModal
-│   │   │   └── layout/       # AppLayout, Sidebar, TopNavbar (Real In-App Notifications)
-│   │   ├── contexts/         # AuthContext & ThemeContext
-│   │   └── types/            # TypeScript definitions
-│   └── package.json
+```
 ├── database/                 # Seeding scripts & vector extension SQL
 │   ├── seeds/
 │   │   ├── seed_data.py      # Base Module 0 seed script

@@ -58,6 +58,29 @@ def get_current_active_user(
     return current_user
 
 
+def get_optional_current_user(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> User | None:
+    """Optional user dependency for public routes that can adapt if authenticated."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header.split(" ", 1)[1].strip()
+    try:
+        payload = decode_token(token)
+        if payload and payload.get("type") == "access":
+            user_id = payload.get("sub")
+            if user_id:
+                user_repo = UserRepository(db)
+                user = user_repo.get_by_id(int(user_id))
+                if user and user.is_active:
+                    return user
+    except Exception:
+        pass
+    return None
+
+
 def require_role(*allowed_roles: str) -> Callable[[User], User]:
     """Factory creating dependency to enforce Role-Based Access Control (RBAC)."""
     def role_checker(current_user: User = Depends(get_current_active_user)) -> User:

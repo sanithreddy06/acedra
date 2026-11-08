@@ -12,6 +12,8 @@ import { RiskDashboard } from '../risk/RiskDashboard';
 import { RecommendationsView } from '../recommendations/RecommendationsView';
 import { PlacementReadinessDashboard } from '../placement/PlacementReadinessDashboard';
 import { PlacementOfficerConsole } from '../placement/PlacementOfficerConsole';
+import { CampusAIChatInterface } from '../chat/CampusAIChatInterface';
+import { RAGDocumentManager } from '../chat/RAGDocumentManager';
 import { useAuth } from '../../contexts/AuthContext';
 import { EmptyState } from '../common/EmptyState';
 import { ShieldAlert, BookOpen, CalendarCheck, Award, Briefcase, Settings, GraduationCap } from 'lucide-react';
@@ -29,6 +31,13 @@ export const AppLayout: React.FC = () => {
     switch (currentTab) {
       case 'dashboard':
         return <RoleDashboardView />;
+
+      // MODULE 5: Conversational AI & RAG Knowledge Base
+      case 'campus_ai':
+        return <CampusAIChatInterface />;
+
+      case 'rag_documents':
+        return <RAGDocumentManager />;
 
       // MODULE 1: Student Directory & Management
       case 'students':

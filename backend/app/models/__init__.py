@@ -48,6 +48,18 @@ from app.models.placement import (
     OpportunityRequirement,
     StudentApplication,
 )
+from app.models.ai_assistant import (
+    Document,
+    DocumentChunk,
+    DocumentAccessRule,
+    Conversation,
+    Message,
+    ConversationFeedback,
+    DocumentCategory,
+    DocumentAccessPermission,
+    AssistantMode,
+    MessageRole,
+)
 
 __all__ = [
     "Base",
@@ -95,4 +107,14 @@ __all__ = [
     "PlacementOpportunity",
     "OpportunityRequirement",
     "StudentApplication",
+    "Document",
+    "DocumentChunk",
+    "DocumentAccessRule",
+    "Conversation",
+    "Message",
+    "ConversationFeedback",
+    "DocumentCategory",
+    "DocumentAccessPermission",
+    "AssistantMode",
+    "MessageRole",
 ]
