@@ -12,6 +12,7 @@ from app.api.v1.risk import router as risk_router
 from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.placement import router as placement_router
 from app.api.v1.ai_assistant import router as ai_assistant_router
+from app.api.v1.interventions import router as interventions_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(auth_router)
@@ -27,3 +28,4 @@ api_v1_router.include_router(risk_router)
 api_v1_router.include_router(recommendations_router)
 api_v1_router.include_router(placement_router)
 api_v1_router.include_router(ai_assistant_router)
+api_v1_router.include_router(interventions_router)

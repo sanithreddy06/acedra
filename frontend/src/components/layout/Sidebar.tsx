@@ -50,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Academic Dashboard', icon: Compass },
           { id: 'campus_ai', label: 'Smart Campus AI', icon: Sparkles, badge: 'M5' },
+          { id: 'interventions', label: 'Support Interventions', icon: ShieldCheck, badge: 'M6' },
           { id: 'profile', label: 'My Intelligence Dossier', icon: GraduationCap, badge: 'Full' },
           { id: 'placement_readiness', label: 'Placement Readiness', icon: Briefcase, badge: 'M4' },
           { id: 'recommendations', label: 'Personalized Roadmap', icon: Award, badge: 'M3' },
@@ -62,6 +63,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Faculty Dashboard', icon: Compass },
           { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
+          { id: 'interventions', label: 'Interventions & Support', icon: ShieldCheck, badge: 'M6' },
+          { id: 'reports', label: 'Institutional Reports', icon: FileText, badge: 'M6' },
           { id: 'faculty_analytics', label: 'Cohort Performance Analytics', icon: Award, badge: 'Live' },
           { id: 'placement_readiness', label: 'Placement Readiness Radar', icon: Briefcase, badge: 'M4' },
           { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Alerts' },
@@ -74,6 +77,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Mentorship Central', icon: Compass },
           { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
+          { id: 'interventions', label: 'Interventions Hub', icon: ShieldCheck, badge: 'M6' },
+          { id: 'reports', label: 'Mentorship Reports', icon: FileText, badge: 'M6' },
           { id: 'placement_readiness', label: 'Mentee Placement Readiness', icon: Briefcase, badge: 'M4' },
           { id: 'risk_management', label: 'Early-Warning Radar', icon: ShieldAlert, badge: 'Active' },
           { id: 'recommendations', label: 'Mentee Recommendations', icon: Award, badge: 'M3' },
@@ -86,6 +91,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
           { id: 'dashboard', label: 'Executive Intelligence', icon: Compass },
           { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
           { id: 'rag_documents', label: 'RAG Knowledge Base', icon: Database, badge: 'M5' },
+          { id: 'interventions', label: 'Interventions Central', icon: ShieldCheck, badge: 'M6' },
+          { id: 'reports', label: 'Reports & Audits Center', icon: FileText, badge: 'M6' },
           { id: 'placement_readiness', label: 'Placement Hub & Roles', icon: Briefcase, badge: 'M4' },
           { id: 'risk_management', label: 'Early-Warning & Risk', icon: ShieldAlert, badge: 'Policy' },
           { id: 'recommendations', label: 'Recommendation Catalogue', icon: Award, badge: 'M3' },
@@ -101,12 +108,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, isOpe
         return [
           { id: 'dashboard', label: 'Placement Hub', icon: Compass },
           { id: 'campus_ai', label: 'Campus AI Assistant', icon: Sparkles, badge: 'M5' },
+          { id: 'interventions', label: 'Student Interventions', icon: ShieldCheck, badge: 'M6' },
+          { id: 'reports', label: 'Placement & Progress Reports', icon: FileText, badge: 'M6' },
           { id: 'recruitment', label: 'Corporate Drives & Opps', icon: Briefcase, badge: 'M4' },
           { id: 'placement_readiness', label: 'Student Readiness Hub', icon: Award, badge: 'M4' },
           { id: 'recommendations', label: 'Placement Readiness Plans', icon: Award, badge: 'M3' },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'eligibility', label: 'Student Eligibility Roster', icon: Award },
-          { id: 'reports', label: 'Branch Analytics', icon: FileText },
           { id: 'settings', label: 'Account Settings', icon: Settings },
         ];
       default:

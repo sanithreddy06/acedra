@@ -81,8 +81,16 @@ def get_optional_current_user(
     return None
 
 
-def require_role(*allowed_roles: str) -> Callable[[User], User]:
+def require_role(*roles: Any) -> Callable[[User], User]:
     """Factory creating dependency to enforce Role-Based Access Control (RBAC)."""
+    flattened = []
+    for r in roles:
+        if isinstance(r, (list, tuple, set)):
+            flattened.extend(r)
+        else:
+            flattened.append(r)
+    allowed_roles = set(flattened)
+
     def role_checker(current_user: User = Depends(get_current_active_user)) -> User:
         if current_user.role not in allowed_roles:
             raise HTTPException(

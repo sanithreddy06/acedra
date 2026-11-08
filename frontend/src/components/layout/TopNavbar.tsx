@@ -30,6 +30,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   // Tab display name for breadcrumb
   const formattedTab = currentTab
@@ -39,19 +40,13 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
 
   const loadNotifications = async () => {
     try {
-      const data = await api.getNotifications();
-      if (data && data.length > 0) {
-        setNotifications(data);
-      } else {
-        setNotifications([
-          { id: 1, title: 'Fall 2026 Academic Term Active', message: 'Semester 5 curriculum verified & loaded', created_at: new Date().toISOString(), is_read: true },
-          { id: 2, title: 'Early Warning Engine Initialized', message: 'Module 2 rules active for student surveillance', created_at: new Date().toISOString(), is_read: true },
-        ]);
+      const data = await api.getInAppNotifications();
+      if (data && data.notifications) {
+        setNotifications(data.notifications);
+        setUnreadCount(data.unread_count);
       }
     } catch {
-      setNotifications([
-        { id: 1, title: 'Fall 2026 Academic Term Active', message: 'Semester 5 curriculum verified & loaded', created_at: new Date().toISOString(), is_read: true },
-      ]);
+      // Fallback
     }
   };
 
@@ -63,14 +58,23 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
 
   const handleMarkRead = async (id: number) => {
     try {
-      await api.markNotificationRead(id);
+      await api.markInAppNotificationRead(id);
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch {
       // ignore
     }
   };
 
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const handleMarkAllRead = async () => {
+    try {
+      await api.markAllInAppNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 lg:px-8 flex items-center justify-between">
@@ -130,13 +134,23 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, currentTa
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-80 rounded-2xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 py-3 z-50">
               <div className="px-4 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">Notifications</span>
-                {unreadCount > 0 ? (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
-                    {unreadCount} New
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-400">All caught up</span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-900 dark:text-slate-100">Notifications</span>
+                  {unreadCount > 0 ? (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                      {unreadCount} New
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">All caught up</span>
+                  )}
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-[10px] font-medium text-brand-600 dark:text-brand-400 hover:underline"
+                  >
+                    Mark all read
+                  </button>
                 )}
               </div>
               <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">

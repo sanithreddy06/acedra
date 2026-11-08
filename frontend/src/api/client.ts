@@ -786,6 +786,129 @@ class ApiClient {
     });
     return this.handleResponse(res);
   }
+
+  // --- MODULE 6: Role Dashboards, Interventions, In-App Notifications & Reports ---
+  async getInterventions(params: Record<string, any> = {}): Promise<any[]> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') query.append(k, String(v));
+    });
+    const res = await fetch(`${API_BASE}/interventions?${query.toString()}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async createIntervention(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/interventions`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getInterventionDetail(interventionId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/interventions/${interventionId}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateInterventionStatus(interventionId: number, data: { status: string; resolution_summary?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/interventions/${interventionId}/status`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async addInterventionNote(interventionId: number, data: { note_text: string; note_type?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/interventions/${interventionId}/notes`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async scheduleInterventionFollowup(interventionId: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/interventions/${interventionId}/followups`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async recordFollowupOutcome(followupId: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/interventions/followups/${followupId}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getInAppNotifications(unreadOnly: boolean = false): Promise<{ notifications: any[]; unread_count: number }> {
+    const res = await fetch(`${API_BASE}/notifications?unread_only=${unreadOnly}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async markInAppNotificationRead(notificationId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async markAllInAppNotificationsRead(): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/read-all`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getNotificationPreferences(): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/preferences`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  async updateNotificationPreferences(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/notifications/preferences`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async exportInstitutionalReport(data: { report_type: string; file_format?: string; department_id?: number; student_id?: number }): Promise<any> {
+    const res = await fetch(`${API_BASE}/reports/export`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(res);
+  }
+
+  async getInstitutionalReports(limit: number = 30): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/reports?limit=${limit}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(res);
+  }
+
+  getReportDownloadUrl(reportId: number): string {
+    return `${API_BASE}/reports/${reportId}/download`;
+  }
 }
 
 export const api = new ApiClient();

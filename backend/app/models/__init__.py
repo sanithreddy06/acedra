@@ -60,6 +60,18 @@ from app.models.ai_assistant import (
     AssistantMode,
     MessageRole,
 )
+from app.models.intervention import (
+    Intervention,
+    InterventionNote,
+    InterventionFollowup,
+    Notification,
+    NotificationPreference,
+    ReportExport,
+    InterventionStatus,
+    InterventionType,
+    NotificationType,
+    ReportType,
+)
 
 __all__ = [
     "Base",
@@ -117,4 +129,14 @@ __all__ = [
     "DocumentAccessPermission",
     "AssistantMode",
     "MessageRole",
+    "Intervention",
+    "InterventionNote",
+    "InterventionFollowup",
+    "Notification",
+    "NotificationPreference",
+    "ReportExport",
+    "InterventionStatus",
+    "InterventionType",
+    "NotificationType",
+    "ReportType",
 ]
