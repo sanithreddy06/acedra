@@ -46,3 +46,7 @@ Thumbs.db
 
 # Intermediate OpenAPI dump used by `npm run gen:api`
 frontend/openapi.json
+
+# ---------------------------------------------------------------- TLS material (never committed)
+docker/certs/
+docker/acme/

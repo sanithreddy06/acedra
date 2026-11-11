@@ -101,7 +101,7 @@ export function StudentDetailPage() {
                 <Stat label="Backlogs" value={a.metrics?.total_backlogs ?? 0} tone={a.metrics?.total_backlogs ? 'attention' : undefined} />
               </StatStrip>
             )}</Async>
-            {hasModule('risk_identification') && (
+            {hasModule('risk_identification') && me?.role !== 'placement_officer' && (
               <Panel title="Early alerts" padded={false}>
                 <Async state={risk}>{(r) => <AlertList alerts={r.alerts} />}</Async>
               </Panel>

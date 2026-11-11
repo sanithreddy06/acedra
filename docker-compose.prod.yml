@@ -3,7 +3,11 @@
 # Integrates:
 # - PostgreSQL 16 with pgvector extension
 # - Production Gunicorn/Uvicorn FastAPI Backend
-# - Production Nginx React Frontend with Reverse Proxy, SSL-ready, & Rate Limiting
+# - Production Nginx React Frontend with Reverse Proxy, TLS termination & Rate Limiting
+# - Redis as the shared rate-limit store for the API workers
+#
+# Before the first start: put fullchain.pem and privkey.pem in TLS_CERT_DIR (default ./docker/certs).
+# See documentation/DEPLOYMENT_GUIDE.md.
 # ==============================================================================
 
 services:
@@ -32,6 +36,19 @@ services:
           cpus: '2.0'
           memory: 2048M
 
+  redis:
+    image: redis:7-alpine
+    container_name: acedra_prod_redis
+    restart: always
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    networks:
+      - acedra_backend_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -47,7 +64,10 @@ services:
       - SEED_DEMO_DATA=false
       - ACCESS_TOKEN_EXPIRE_MINUTES=60
       - REFRESH_TOKEN_EXPIRE_DAYS=7
-      - RATE_LIMIT_DEFAULT=120/minute
+      - RATE_LIMIT_DEFAULT=${RATE_LIMIT_DEFAULT:-240/minute}
+      - RATE_LIMIT_STORAGE_URI=redis://redis:6379/0
+      - LEGAL_ACCEPTANCE_ENFORCED=${LEGAL_ACCEPTANCE_ENFORCED:-true}
+      - CONTACT_RATE_LIMIT=${CONTACT_RATE_LIMIT:-5/hour}
       - LLM_PROVIDER=${LLM_PROVIDER:-none}
       - LLM_MODEL=${LLM_MODEL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
@@ -61,13 +81,13 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USERNAME=${SMTP_USERNAME:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-    volumes:
-      - document_storage:/app/storage/documents
     networks:
       - acedra_backend_net
       - acedra_frontend_net
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -89,13 +109,17 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ${TLS_CERT_DIR:-./docker/certs}:/etc/nginx/certs:ro
+      - ${ACME_WEBROOT:-./docker/acme}:/var/www/certbot:ro
     networks:
       - acedra_frontend_net
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/nginx-health || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 3
@@ -108,8 +132,6 @@ services:
 volumes:
   postgres_prod_data:
     name: acedra_postgres_prod_data
-  document_storage:
-    name: acedra_document_storage
 
 networks:
   acedra_backend_net:

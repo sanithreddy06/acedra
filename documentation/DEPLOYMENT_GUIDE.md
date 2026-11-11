@@ -8,7 +8,7 @@ Requirements: Python 3.10+, Node 18+.
 # backend
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt          # runtime + pytest + ruff
 cp .env.example .env                      # SQLite by default
 cd .. && python database/seeds/seed_all.py   # creates acedra.db with synthetic tenants (destructive reset)
 cd backend && uvicorn app.main:app --reload --port 8000
@@ -35,10 +35,21 @@ synthetic tenants **only if the database has no universities**. Set `SEED_DEMO_D
 ## 3. Production
 
 1. `cp .env.production.example .env.production` and fill in every value. The API refuses to start with a
-   default or short `SECRET_KEY`, wildcard CORS or a SQLite URL.
-2. `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`
-3. Migrations run on start. Demo data is never loaded in production (`SEED_DEMO_DATA=false`).
-4. Create the first ACEDRA super administrator once. There is no sign-up, by design:
+   default or short `SECRET_KEY`, wildcard CORS, a SQLite URL or a `PUBLIC_APP_URL` that is not `https://`.
+2. **TLS certificate.** Nginx terminates HTTPS itself and will not start without a certificate. Put
+   `fullchain.pem` and `privkey.pem` for your hostname in `TLS_CERT_DIR` (default `./docker/certs`, git-ignored):
+   * from your certificate authority, or
+   * from Let's Encrypt: port 80 serves `/.well-known/acme-challenge/` from `ACME_WEBROOT` (default
+     `./docker/acme`), so `certbot certonly --webroot -w ./docker/acme -d your.host` works once the stack is up
+     with a temporary certificate; copy the issued files into `TLS_CERT_DIR` and run
+     `docker compose -f docker-compose.prod.yml exec frontend nginx -s reload`. Renew the same way.
+   * for a local smoke test only: `./docker/make-selfsigned-cert.sh localhost`.
+   If a load balancer already terminates TLS in front of this stack, it must forward to port 443 and you
+   should restrict who can reach the stack directly: the API trusts the address Nginx reports.
+3. `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`
+4. Migrations run on start. Demo data is never loaded in production (`SEED_DEMO_DATA=false`). The stack also
+   starts Redis, which holds the rate-limit counters shared by the API workers.
+5. Create the first ACEDRA super administrator once. There is no sign-up, by design:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backend python - <<'PY'
@@ -59,14 +70,17 @@ print("Invitation emailed to", u.email)
 PY
 ```
 
-5. Before building the frontend image, create `frontend/.env.production` from `frontend/.env.example` with the
+6. Before building the frontend image, create `frontend/.env.production` from `frontend/.env.example` with the
    confirmed operator name, address and contact emails (they are compiled into the public site; unset values show
    as "[To be configured: …]"). Keep `LEGAL_ACCEPTANCE_ENFORCED=true` in `.env.production`.
-6. Have the bundled legal drafts reviewed, then publish approved versions from **Platform → Legal documents**
+7. Have the bundled legal drafts reviewed, then publish approved versions from **Platform → Legal documents**
    (draft → approve with a recorded note → publish with an effective date). Users are asked to accept new Terms and
    Privacy versions the next time they use ACEDRA.
-7. Put TLS in front of the frontend container (a load balancer or reverse proxy), and set `PUBLIC_APP_URL` to the
-   public HTTPS origin so invitation links are correct.
+8. Set `PUBLIC_APP_URL` to the public HTTPS origin so invitation and reset links are correct.
+
+> The production images have been reviewed but **not yet built or run** in this repository's history (no Docker
+> was available where the changes were made). The CI workflow builds both images on every push; treat its first
+> green run, followed by a smoke test of the stack with a self-signed certificate, as the real verification.
 
 ### Optional providers
 
@@ -77,6 +91,9 @@ PY
 | `EMAIL_PROVIDER` | `log`, `smtp` | `log` never sends mail |
 | `LEGAL_ACCEPTANCE_ENFORCED` | `false`, `true` | `true`: workspace API requests return 428 until the current Terms and Privacy versions are accepted |
 | `CONTACT_RATE_LIMIT` | e.g. `5/hour` | Public contact form, per client address |
+| `RATE_LIMIT_STORAGE_URI` | `memory://`, `redis://host:6379/0` | Must be a shared store when more than one worker or instance runs (the production compose file sets Redis) |
+| `LOGIN_MAX_FAILED_ATTEMPTS`, `LOGIN_LOCKOUT_MINUTES` | default `5`, `15` | Consecutive failed sign-ins before an account is locked, and for how long. A password reset unlocks it |
+| `EMAIL_MAX_ATTEMPTS`, `EMAIL_RETRY_INTERVAL_SECONDS` | default `5`, `60` | Retry policy for queued email |
 
 ## 4. Database migrations
 
@@ -91,9 +108,11 @@ alembic revision --autogenerate -m "describe change"   # after changing models
 |---|---|
 | `0001_rio_baseline` | The multi-tenant schema |
 | `0002_legal_contact` | `legal_documents`, `legal_acceptances`, `contact_messages` (new tables only; no existing data is changed) |
+| `0003_lockout_email_queue` | `users.failed_login_count`, `users.locked_until`; `email_messages.attempts`, `last_attempt_at`, `sent_at` (new columns with defaults; no existing data is changed) |
 
 A local development database created by the app itself (`AUTO_CREATE_SCHEMA=true`, the default outside
-production) has no `alembic_version` table. Starting the API adds the three new tables to it automatically; to
+production) has no `alembic_version` table. Starting the API adds new tables and any missing nullable or
+defaulted columns to it automatically (`core/database.py::add_missing_columns`, development only); to
 manage it with Alembic instead, run `alembic stamp 0001_rio_baseline` once and then `alembic upgrade head`. Both
 paths were checked on a copy of a seeded development database: existing rows were unchanged and `alembic check`
 reported no differences.
@@ -126,7 +145,10 @@ For SQLite the scripts copy `acedra.db`. Schedule backups daily and test a resto
 cd backend && python -m pytest -q --ignore=tests/benchmark_performance.py
 # against PostgreSQL:
 TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/acedra_test python -m pytest -q --ignore=tests/benchmark_performance.py
-cd frontend && npm run build
+cd frontend && npm run lint && npm run typecheck && npm run build
 ```
+
+`.github/workflows/ci.yml` runs all of this on every push and pull request: Ruff, `alembic check`, the tests on
+SQLite and on PostgreSQL 16, the frontend lint, typecheck and build, and a build of both production images.
 
 Each run creates and seeds its own isolated database.

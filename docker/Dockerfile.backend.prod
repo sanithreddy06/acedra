@@ -1,59 +1,52 @@
 # ==============================================================================
-# Production Dockerfile for ACEDRA Backend (FastAPI)
-# Multi-stage build with non-root security execution and production Gunicorn/Uvicorn
+# Production image for the ACEDRA backend (FastAPI behind Gunicorn/Uvicorn workers)
+# Multi-stage: dependencies are built into a virtual environment that the non-root
+# runtime user can read and execute.
 # ==============================================================================
 
-# Build Stage
 FROM python:3.12-slim AS builder
 
-WORKDIR /build
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN python -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-RUN pip install --no-cache-dir --user gunicorn
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Production Runtime Stage
+
 FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ENVIRONMENT=production
 
-# Create non-privileged service user
-RUN groupadd -g 10001 acedra && \
-    useradd -u 10001 -g acedra -s /bin/bash -m appuser
+RUN groupadd -g 10001 acedra && useradd -u 10001 -g acedra -s /usr/sbin/nologin -m appuser
 
-# Copy application source code
 COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini .
 COPY database/seeds ./database/seeds
 COPY docker/entrypoint.sh /entrypoint.sh
-
-# Create storage directory for uploads and document indexing
-RUN mkdir -p /app/storage/documents && chown -R appuser:acedra /app
+RUN chmod 755 /entrypoint.sh && chown -R appuser:acedra /app
 
 USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-"]
+# --forwarded-allow-ips: the API is reachable only through the bundled Nginx on a private Docker network
+# (it publishes no port), and Nginx overwrites X-Forwarded-For with the address it actually saw. Trusting
+# the proxy headers therefore gives rate limiting and audit records the real visitor address.
+CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", \
+     "--forwarded-allow-ips", "*", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-"]

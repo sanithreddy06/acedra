@@ -10,7 +10,7 @@ WORKDIR /app
 
 # Install dependencies using cached layers
 COPY frontend/package*.json ./
-RUN npm ci || npm install
+RUN npm ci
 
 # Build static assets
 COPY frontend/ .
@@ -34,9 +34,11 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
     touch /var/run/nginx.pid && \
     chown -R nginx:nginx /var/run/nginx.pid /var/cache/nginx /var/log/nginx
 
-EXPOSE 80
+RUN mkdir -p /var/www/certbot
+
+EXPOSE 80 443
 
 HEALTHCHECK --interval=20s --timeout=5s --retries=3 \
-    CMD wget -q --spider http://127.0.0.1/ || exit 1
+    CMD wget -q --spider http://127.0.0.1/nginx-health || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

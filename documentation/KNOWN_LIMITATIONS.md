@@ -12,13 +12,20 @@ ACEDRA in this repository is **prototype-complete**. It is not yet production-re
 
 * **No external security review or penetration test** has been performed. Automated tests attack the main
   isolation paths but are not exhaustive.
-* **Docker images were not built during this release**: Docker Hub was unreachable from the build environment.
-  Both compose files validate (`docker compose config`). Building and smoke-testing the images is the first
-  deployment step.
-* Tokens are stored in `sessionStorage` (cleared when the tab closes). Moving to httpOnly cookies with CSRF
-  protection would further reduce exposure to XSS.
-* Rate limiting is per process (in memory). Multi-instance deployments need a shared store (for example Redis)
-  for slowapi.
+* **The production images have still not been built or run.** The backend image was rewritten (dependencies in
+  a virtual environment the non-root user can read; the previous image installed them under `/root`, out of that user's reach), Nginx now terminates
+  TLS, and Redis was added, but none of this has been executed. CI builds both images; a smoke test of the full
+  stack is the first deployment step.
+* **The tests have only been run on SQLite here.** CI also runs them on PostgreSQL 16; check that run before
+  relying on PostgreSQL behaviour (row locking for refresh tokens and the email outbox in particular).
+* Tokens are stored in `sessionStorage` (cleared when the tab closes). The CSP no longer allows inline scripts
+  and refresh tokens are single use, which limits the damage of a stolen token; httpOnly cookies with CSRF
+  protection would reduce it further.
+* Signing out ends every session of that account on every device (one token version per user).
+* Imports, risk evaluation and report exports still run inside the request (in a worker thread, so they no
+  longer stall other requests). A very large university needs a job queue with progress reporting.
+* Email delivery and retry run inside the API process. That is adequate for invitations and resets; a bulk
+  import of thousands of students sends its invitations in batches of 50 per minute per worker.
 * Uploaded documents are stored in the database as extracted text. There is no virus scanning, and original files
   are not retained.
 * There is no multi-factor authentication or SSO (SAML/OIDC) integration yet.
@@ -42,6 +49,16 @@ ACEDRA in this repository is **prototype-complete**. It is not yet production-re
 * Placement readiness is an internal indicator, not a placement guarantee or employer certification.
 * Existing v0.1 databases are not migrated in place (see the deployment guide).
 
+## Product decisions still open
+
+* **Self-reported skills count fully towards placement readiness.** Unverified skills are flagged but earn full
+  credit, so a student can raise their own score by adding skills. Decide whether unverified skills should earn
+  partial or no credit (`PlacementService.calculate_placement_readiness`).
+* **One account per email address across all universities.** A person cannot hold accounts at two tenants.
+* **Sending student records to an external language model.** With `LLM_PROVIDER` set, personal-mode answers send
+  the student's record to that provider. The prompt-injection filter is a short pattern list and is not a
+  security boundary. Agree the provider, data-processing terms and consent with each institution first.
+
 ## Technical debt
 
 Known, deliberate gaps in code quality, kept small and listed so they can be scheduled:
@@ -57,7 +74,14 @@ Known, deliberate gaps in code quality, kept small and listed so they can be sch
 * **Type checking.** The backend is linted with Ruff but not type-checked (annotations are partial; mypy would
   report many existing issues). The frontend is strict TypeScript with ESLint; Prettier is not used, to avoid a
   repository-wide reformat.
-* **Dependencies.** `npm audit` reports moderate advisories for React Router 6 (fixed in v7) and a Vite 5
+* **Transactions.** Services commit their own work, so an operation that spans several services is not
+  atomic. Moving commits to the route (one unit of work per request) is the next structural change.
+* **Tenancy scope is session state.** `AuthService` and the public routes switch the request's session to
+  bypass mode and leave it there. It is safe where they are used today (authentication and public endpoints),
+  but any new caller inside a university route would silently lose tenant filtering; wrap such uses in
+  `unscoped(db)` instead.
+* **Dependencies.** Python packages are pinned exactly in `backend/requirements.txt`; there is no automated
+  update or vulnerability scan yet. `npm audit` reports moderate advisories for React Router 6 (fixed in v7) and a Vite 5
   development-server advisory (fixed in later majors). Neither affects the built site's runtime beyond React
   Router's link handling; upgrading either is a major-version change.
 

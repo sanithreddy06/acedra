@@ -27,7 +27,7 @@ collects institutional enquiries. There is no public sign-up.
 ```bash
 # backend
 cd backend && python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && cp .env.example .env
+pip install -r requirements-dev.txt && cp .env.example .env
 cd .. && python database/seeds/seed_all.py        # resets acedra.db and loads 3 synthetic universities
 cd backend && uvicorn app.main:app --reload --port 8000
 

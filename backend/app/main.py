@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import app.models  # registers every model with SQLAlchemy before routers import them
 from app.api.v1 import api_v1_router
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import Base, add_missing_columns, engine
 from app.core.ratelimit import limiter
 from app.core.tenancy import CrossTenantWriteError
 
@@ -45,6 +45,9 @@ log = logging.getLogger("acedra")
 async def lifespan(_: FastAPI):
     if settings.AUTO_CREATE_SCHEMA:
         Base.metadata.create_all(bind=engine)
+        added = add_missing_columns()
+        if added:
+            log.info("Development schema updated: added %s", ", ".join(added))
     log.info("ACEDRA API started (environment=%s, llm=%s, embeddings=%s, email=%s)", settings.ENVIRONMENT,
              settings.LLM_PROVIDER, settings.EMBEDDING_PROVIDER, settings.EMAIL_PROVIDER)
     retry_task = asyncio.create_task(_email_retry_loop()) if settings.EMAIL_PROVIDER == "smtp" else None
