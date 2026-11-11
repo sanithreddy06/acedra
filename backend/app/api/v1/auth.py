@@ -59,7 +59,8 @@ def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(
 
 
 @router.post("/refresh", response_model=Token)
-def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)) -> Any:
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def refresh_token(payload: RefreshTokenRequest, request: Request, db: Session = Depends(get_db)) -> Any:
     return AuthService(db).refresh_access_token(payload.refresh_token)
 
 

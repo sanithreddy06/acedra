@@ -26,12 +26,16 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str = _INSECURE_DEFAULT_SECRET
+    ALLOW_INSECURE_DEV_SECRET: bool = False
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     INVITATION_TTL_HOURS: int = 72
     PASSWORD_RESET_TTL_MINUTES: int = 30
     PASSWORD_MIN_LENGTH: int = 10
+    # Consecutive failed sign-ins before an account is locked, and for how long.
+    LOGIN_MAX_FAILED_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
@@ -66,6 +70,9 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT: str = "20/minute"
     ENQUIRY_RATE_LIMIT: str = "5/hour"
     CONTACT_RATE_LIMIT: str = "5/hour"
+    # Where rate-limit counters live. "memory://" is per process; production with more than one worker or
+    # instance must use a shared store, e.g. "redis://redis:6379/0".
+    RATE_LIMIT_STORAGE_URI: str = "memory://"
 
     # When true, workspace API calls are refused (HTTP 428) until the signed-in person has accepted the current
     # Terms and Privacy Policy. The web app always asks for acceptance before showing a workspace.
@@ -94,6 +101,8 @@ class Settings(BaseSettings):
     SMTP_USERNAME: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     SMTP_STARTTLS: bool = True
+    EMAIL_MAX_ATTEMPTS: int = 5
+    EMAIL_RETRY_INTERVAL_SECONDS: int = 60
 
     model_config = SettingsConfigDict(
         env_file=str(PROJECT_ROOT / "backend" / ".env"),
@@ -109,6 +118,16 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_environment(self):
         problems = []
+        environment = self.ENVIRONMENT.lower()
+        if environment not in {"development", "test", "production"}:
+            problems.append(f"ENVIRONMENT must be development, test or production (got '{self.ENVIRONMENT}').")
+        # Fail closed: the built-in secret is tolerated only on a developer's own SQLite database. Anything
+        # pointed at a real database server must have its own secret, whatever ENVIRONMENT says.
+        if not self.is_production and self.SECRET_KEY == _INSECURE_DEFAULT_SECRET \
+                and not self.DATABASE_URL.startswith("sqlite") and environment != "test" \
+                and not self.ALLOW_INSECURE_DEV_SECRET:
+            problems.append("SECRET_KEY must be set when using a database server "
+                            "(set ALLOW_INSECURE_DEV_SECRET=true only for a local throwaway stack).")
         if self.is_production:
             if self.SECRET_KEY == _INSECURE_DEFAULT_SECRET or len(self.SECRET_KEY) < 32:
                 problems.append("SECRET_KEY must be set to a random value of at least 32 characters.")
@@ -118,6 +137,8 @@ class Settings(BaseSettings):
                 problems.append("DATABASE_URL must point to PostgreSQL in production.")
             if self.EMAIL_PROVIDER == "smtp" and not self.SMTP_HOST:
                 problems.append("SMTP_HOST is required when EMAIL_PROVIDER=smtp.")
+            if not self.PUBLIC_APP_URL.startswith("https://"):
+                problems.append("PUBLIC_APP_URL must be an https:// address in production.")
             self.AUTO_CREATE_SCHEMA = False
         if self.LLM_PROVIDER not in {"none", "openai_compatible", "anthropic", "ollama"}:
             problems.append(f"Unsupported LLM_PROVIDER '{self.LLM_PROVIDER}'.")

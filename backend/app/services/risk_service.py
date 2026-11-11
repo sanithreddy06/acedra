@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import desc, func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.clock import utcnow
 from app.models.academic import (
@@ -452,10 +452,12 @@ class RiskService:
         students = student_query.options(
             joinedload(Student.user),
             joinedload(Student.department),
-            joinedload(Student.attendance_records).joinedload(SubjectAttendance.subject),
-            joinedload(Student.assessments).joinedload(StudentAssessment.subject),
-            joinedload(Student.semester_records),
-            joinedload(Student.subject_results).joinedload(SubjectResult.subject),
+            # One query per collection. Joining four collections in a single statement multiplies rows
+            # (attendance × assessments × terms × results per student) and does not scale.
+            selectinload(Student.attendance_records).joinedload(SubjectAttendance.subject),
+            selectinload(Student.assessments).joinedload(StudentAssessment.subject),
+            selectinload(Student.semester_records),
+            selectinload(Student.subject_results).joinedload(SubjectResult.subject),
         ).all()
 
         evaluation = RiskEvaluation(

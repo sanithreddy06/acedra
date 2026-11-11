@@ -56,6 +56,9 @@ class User(Base, TimestampMixin, TenantMixin):
     # Incremented on logout / password change so previously issued tokens stop working.
     token_version = Column(Integer, default=0, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
+    # Consecutive failed sign-ins; the account is locked until ``locked_until`` once the limit is reached.
+    failed_login_count = Column(Integer, default=0, server_default="0", nullable=False)
+    locked_until = Column(DateTime, nullable=True)
     invited_at = Column(DateTime, nullable=True)
     is_synthetic = Column(Boolean, default=False, nullable=False)
 

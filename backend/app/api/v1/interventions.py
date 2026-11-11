@@ -49,6 +49,8 @@ def list_interventions(
     db: Session = Depends(get_db),
 ) -> Any:
     """Retrieve role-scoped list of interventions."""
+    if current_user.role == "placement_officer":
+        raise HTTPException(status_code=403, detail="Placement officers do not have access to interventions.")
     items, _ = InterventionService.list_interventions(
         db=db,
         current_user=current_user,
@@ -316,7 +318,7 @@ def list_reports(
     db: Session = Depends(get_db),
 ) -> Any:
     """List historical reports and export jobs."""
-    reports = ReportService.list_reports(db=db, limit=limit)
+    reports = ReportService.list_reports(db=db, current_user=current_user, limit=limit)
     return [
         {
             "id": r.id,
@@ -342,7 +344,7 @@ def download_report(
     db: Session = Depends(get_db),
 ) -> Any:
     """Download generated CSV report file."""
-    report, content = ReportService.get_report_download(db=db, report_id=report_id)
+    report, content = ReportService.get_report_download(db=db, report_id=report_id, current_user=current_user)
     return Response(
         content=content,
         media_type="text/csv",

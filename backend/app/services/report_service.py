@@ -13,7 +13,37 @@ from app.models.intervention import Intervention, ReportExport, ReportType
 from app.models.placement import StudentApplication
 from app.models.profile import Student
 from app.models.risk import RiskAlert
-from app.models.user import User
+from app.models.user import User, UserRole
+
+# Which report types each role may generate. Non-administrators only ever list and download
+# reports they generated themselves, and their exports are built from their own student scope.
+REPORT_TYPES_BY_ROLE = {
+    UserRole.ADMIN.value: {t.value for t in ReportType},
+    UserRole.FACULTY.value: {"STUDENT_PROGRESS", "MENTOR_INTERVENTIONS", "RISK_SUMMARY", "PLACEMENT_READINESS"},
+    UserRole.MENTOR.value: {"STUDENT_PROGRESS", "MENTOR_INTERVENTIONS", "RISK_SUMMARY", "PLACEMENT_READINESS"},
+    UserRole.PLACEMENT_OFFICER.value: {"PLACEMENT_READINESS"},
+}
+
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value):
+    """Neutralise spreadsheet formula injection: text starting with = + - @ is prefixed with a quote."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+class _SafeCsvWriter:
+    def __init__(self, stream):
+        self._writer = csv.writer(stream)
+
+    def writerow(self, row):
+        self._writer.writerow([_safe_cell(c) for c in row])
+
+
+def _can_see_all_reports(user: User) -> bool:
+    return user.role == UserRole.ADMIN.value
 
 
 class ReportService:
@@ -31,6 +61,8 @@ class ReportService:
         """Assembles data rows, formats CSV/JSON output, and creates ReportExport."""
         report_type = report_type.upper()
         file_format = file_format.upper()
+        if current_user is not None and report_type not in REPORT_TYPES_BY_ROLE.get(current_user.role, set()):
+            raise HTTPException(status_code=403, detail="Your role cannot generate this report.")
         now_str = utcnow().strftime("%Y%m%d_%H%M%S")
 
         output_io = io.StringIO()
@@ -40,7 +72,7 @@ class ReportService:
         if report_type == ReportType.STUDENT_PROGRESS.value:
             report_title = "Student Academic Progress & Intelligence Dossier"
             file_name = f"Student_Progress_Report_{now_str}.csv"
-            writer = csv.writer(output_io)
+            writer = _SafeCsvWriter(output_io)
             writer.writerow(
                 [
                     "Student ID",
@@ -63,7 +95,7 @@ class ReportService:
             elif department_id:
                 query = query.filter(Student.department_id == department_id)
 
-            for s in query.limit(100).all():
+            for s in query.order_by(Student.id).all():
                 dept_name = s.department.name if s.department else "N/A"
                 st_name = s.user.full_name if s.user else "Student"
                 writer.writerow(
@@ -85,7 +117,7 @@ class ReportService:
         elif report_type == ReportType.MENTOR_INTERVENTIONS.value:
             report_title = "Mentor Interventions & Student Support Audit"
             file_name = f"Mentor_Interventions_Report_{now_str}.csv"
-            writer = csv.writer(output_io)
+            writer = _SafeCsvWriter(output_io)
             writer.writerow(
                 [
                     "Intervention ID",
@@ -131,7 +163,7 @@ class ReportService:
         elif report_type == ReportType.DEPARTMENT_SUMMARY.value:
             report_title = "Institutional Departmental Performance Summary"
             file_name = f"Department_Summary_Report_{now_str}.csv"
-            writer = csv.writer(output_io)
+            writer = _SafeCsvWriter(output_io)
             writer.writerow(
                 [
                     "Dept Code",
@@ -166,7 +198,7 @@ class ReportService:
         elif report_type == ReportType.RISK_SUMMARY.value:
             report_title = "Early-Warning Academic Risk Distribution"
             file_name = f"Risk_Early_Warning_Report_{now_str}.csv"
-            writer = csv.writer(output_io)
+            writer = _SafeCsvWriter(output_io)
             writer.writerow(
                 [
                     "Alert ID",
@@ -182,7 +214,7 @@ class ReportService:
                 ]
             )
 
-            alerts = db.query(RiskAlert).order_by(RiskAlert.detected_date.desc()).limit(150).all()
+            alerts = db.query(RiskAlert).order_by(RiskAlert.detected_date.desc()).all()
             for a in alerts:
                 s = a.student
                 st_name = s.user.full_name if s and s.user else "Student"
@@ -204,7 +236,7 @@ class ReportService:
         elif report_type == ReportType.PLACEMENT_READINESS.value:
             report_title = "Campus Placement Readiness & Career Benchmark Summary"
             file_name = f"Placement_Readiness_Report_{now_str}.csv"
-            writer = csv.writer(output_io)
+            writer = _SafeCsvWriter(output_io)
             writer.writerow(
                 [
                     "Student ID",
@@ -218,7 +250,7 @@ class ReportService:
                 ]
             )
 
-            students = db.query(Student).filter(Student.current_semester >= 5).limit(100).all()
+            students = db.query(Student).filter(Student.current_semester >= 5).order_by(Student.id).all()
             for s in students:
                 app_count = db.query(StudentApplication).filter(StudentApplication.student_id == s.id).count()
                 st_name = s.user.full_name if s.user else "Student"
@@ -259,14 +291,20 @@ class ReportService:
         return export
 
     @staticmethod
-    def list_reports(db: Session, limit: int = 30) -> List[ReportExport]:
-        """List recent generated report downloads."""
-        return db.query(ReportExport).order_by(ReportExport.created_at.desc()).limit(limit).all()
+    def list_reports(db: Session, current_user: User, limit: int = 30) -> List[ReportExport]:
+        """Recent reports: administrators see every report, everyone else only their own."""
+        query = db.query(ReportExport)
+        if not _can_see_all_reports(current_user):
+            query = query.filter(ReportExport.generated_by == current_user.id)
+        return query.order_by(ReportExport.created_at.desc()).limit(limit).all()
 
     @staticmethod
-    def get_report_download(db: Session, report_id: int) -> Tuple[ReportExport, str]:
-        """Retrieve report record and payload for file download."""
+    def get_report_download(db: Session, report_id: int, current_user: User) -> Tuple[ReportExport, str]:
+        """Report record and payload. A stored report holds the data its author could see, so only the
+        author or an administrator may download it; anyone else gets the same 404 as a missing report."""
         report = db.query(ReportExport).filter(ReportExport.id == report_id).first()
+        if report and not _can_see_all_reports(current_user) and report.generated_by != current_user.id:
+            report = None
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
         return report, report.content_payload or ""

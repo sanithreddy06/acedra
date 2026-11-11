@@ -70,7 +70,7 @@ export function StudentDetailPage() {
   const [tab, setTab] = useState('overview');
   const profile = useApi<StudentProfile>(`/students/${sid}`);
   const analytics = useApi<StudentAnalytics>(`/students/${sid}/analytics`);
-  const risk = useApi<StudentRiskProfile>(hasModule('risk_identification') ? `/risk/students/${sid}` : null);
+  const risk = useApi<StudentRiskProfile>(hasModule('risk_identification') && me?.role !== 'placement_officer' ? `/risk/students/${sid}` : null);
   const recs = useApi<Recommendation[]>(hasModule('recommendations') && tab === 'plan' ? '/recommendations/' : null, { student_id: sid });
   const readiness = useApi<PlacementReadiness>(hasModule('placement_readiness') && tab === 'readiness' ? `/placement/readiness/${sid}` : null);
   const ints = useApi<Intervention[]>(hasModule('interventions') && me?.role !== 'placement_officer' ? '/interventions' : null, { student_id: sid });

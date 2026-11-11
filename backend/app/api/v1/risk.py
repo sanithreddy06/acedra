@@ -38,6 +38,14 @@ from app.services.risk_service import (
 router = APIRouter(prefix="/risk", tags=["Risk Early-Warning Intelligence"])
 
 
+def _deny_placement_officer(user: User) -> None:
+    """Placement officers work with placement data and aggregate risk statistics only; individual
+    risk alerts and risk profiles are for teaching staff, mentors, administrators and the student."""
+    if user.role == UserRole.PLACEMENT_OFFICER.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Placement officers do not have access to individual risk records.")
+
+
 def _get_alert_or_404(db: Session, alert_id: int) -> RiskAlert:
     alert = RiskService.get_alert_by_id(db, alert_id)
     if not alert:
@@ -149,6 +157,7 @@ def get_risk_alerts(
     """
     Filterable list of risk alerts with role-scoped access control.
     """
+    _deny_placement_officer(current_user)
     if current_user.role == UserRole.STUDENT.value:  # students only ever see their own alerts
         student = own_student_record(db, current_user)
         if not student:
@@ -177,6 +186,7 @@ def get_risk_alert_detail(
     current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve comprehensive alert detail, audit history, and mentor assignments."""
+    _deny_placement_officer(current_user)
     alert = _get_alert_or_404(db, alert_id)
     is_student = current_user.role == UserRole.STUDENT.value
     if is_student and (not alert.student or alert.student.user_id != current_user.id):
@@ -270,6 +280,7 @@ def get_student_risk_profile(
     current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve full risk profile for an individual student."""
+    _deny_placement_officer(current_user)
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")

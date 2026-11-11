@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -11,7 +12,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import app.models  # registers every model with SQLAlchemy before routers import them
@@ -46,7 +47,21 @@ async def lifespan(_: FastAPI):
         Base.metadata.create_all(bind=engine)
     log.info("ACEDRA API started (environment=%s, llm=%s, embeddings=%s, email=%s)", settings.ENVIRONMENT,
              settings.LLM_PROVIDER, settings.EMBEDDING_PROVIDER, settings.EMAIL_PROVIDER)
+    retry_task = asyncio.create_task(_email_retry_loop()) if settings.EMAIL_PROVIDER == "smtp" else None
     yield
+    if retry_task:
+        retry_task.cancel()
+
+
+async def _email_retry_loop() -> None:
+    """Periodically deliver queued email and retry failed messages (see services/email_service.py)."""
+    from app.services.email_service import deliver_queued
+    while True:
+        await asyncio.sleep(settings.EMAIL_RETRY_INTERVAL_SECONDS)
+        try:
+            await asyncio.to_thread(deliver_queued)
+        except Exception:  # keep the loop alive; the next pass retries
+            log.exception("Email retry pass failed")
 
 
 app = FastAPI(
@@ -114,6 +129,15 @@ async def cross_tenant_handler(request: Request, exc: CrossTenantWriteError):
     log.warning("Blocked cross-tenant write", extra={"path": request.url.path})
     return JSONResponse(status_code=403, content={"status": "error", "status_code": 403,
                                                   "detail": "Operation not permitted.", "path": request.url.path})
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    """A unique or foreign-key constraint rejected the write: a conflict with existing data, not a server fault."""
+    log.warning("Constraint violation", extra={"path": request.url.path})
+    detail = "This conflicts with an existing record (for example a duplicate code, number or email)."
+    return JSONResponse(status_code=409, content={"status": "error", "status_code": 409, "detail": detail,
+                                                  "message": detail, "path": request.url.path})
 
 
 @app.exception_handler(Exception)

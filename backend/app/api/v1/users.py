@@ -59,6 +59,24 @@ def _user_out(u: User) -> dict:
     }
 
 
+def _ensure_staff_profile(db: Session, user: User) -> None:
+    """A faculty or mentor account needs its profile row: without one the user has no student scope.
+
+    Called after a role change. Existing profiles are kept (teaching assignments and mentee history stay
+    intact if the person changes back); a missing one is created in the user's department.
+    """
+    profile_cls = {UserRole.FACULTY.value: Faculty, UserRole.MENTOR.value: Mentor}.get(user.role)
+    if profile_cls is None:
+        return
+    if db.query(profile_cls.id).filter(profile_cls.user_id == user.id).first():
+        return
+    if not user.department_id:
+        raise HTTPException(status_code=422, detail="Set a department before assigning the faculty or mentor role.")
+    prefix = "FAC" if profile_cls is Faculty else "MNT"
+    db.add(profile_cls(user_id=user.id, employee_id=f"{prefix}-{user.id:05d}", department_id=user.department_id,
+                       designation=user.title or ("Assistant Professor" if profile_cls is Faculty else "Faculty Mentor")))
+
+
 @router.get("/")
 def list_users(
     role: Optional[str] = None, status: Optional[str] = None, search: Optional[str] = None,
@@ -101,6 +119,16 @@ def invite_user(body: InviteUser, current_user: User = Depends(require_universit
             raise HTTPException(status_code=422, detail="Department not found in your university.")
     if body.role in ("student", "faculty", "mentor") and not dept:
         raise HTTPException(status_code=422, detail="A department is required for this role.")
+    # Validate everything before the account is created, so no invitation is issued for a request that fails.
+    if body.role == UserRole.STUDENT.value:
+        if not body.usn:
+            raise HTTPException(status_code=422, detail="USN / registration number is required for students.")
+        if db.query(Student.id).filter(Student.usn == body.usn).first():
+            raise HTTPException(status_code=409, detail="A student with this USN already exists.")
+    if body.employee_id and body.role in (UserRole.FACULTY.value, UserRole.MENTOR.value):
+        profile_cls = Faculty if body.role == UserRole.FACULTY.value else Mentor
+        if db.query(profile_cls.id).filter(profile_cls.employee_id == body.employee_id).first():
+            raise HTTPException(status_code=409, detail="A staff member with this employee ID already exists.")
 
     svc = InvitationService(db)
     user, inv, _ = svc.create_user_with_invitation(
@@ -108,8 +136,6 @@ def invite_user(body: InviteUser, current_user: User = Depends(require_universit
         invited_by=current_user, department_id=body.department_id, title=body.title, phone=body.phone,
     )
     if body.role == UserRole.STUDENT.value:
-        if not body.usn:
-            raise HTTPException(status_code=422, detail="USN / registration number is required for students.")
         db.add(Student(
             user_id=user.id, roll_number=body.roll_number or body.usn, usn=body.usn,
             department_id=dept.id, current_semester=body.current_semester or 1,
@@ -157,6 +183,9 @@ def update_user(user_id: int, body: UpdateUser, current_user: User = Depends(req
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     data = body.model_dump(exclude_unset=True)
+    for required in ("full_name", "is_active", "role"):  # columns that cannot be null: ignore explicit nulls
+        if required in data and data[required] is None:
+            del data[required]
     if "role" in data:
         if data["role"] not in UNIVERSITY_ROLES:
             raise HTTPException(status_code=422, detail="Platform roles cannot be assigned by a university.")
@@ -173,6 +202,8 @@ def update_user(user_id: int, body: UpdateUser, current_user: User = Depends(req
         raise HTTPException(status_code=422, detail="Department not found in your university.")
     for k, v in data.items():
         setattr(user, k, v)
+    if "role" in data:
+        _ensure_staff_profile(db, user)
     if data.get("is_active") is False or "role" in data:
         user.token_version = (user.token_version or 0) + 1  # end existing sessions
     AuditRepository(db).log(action="USER_UPDATED", user_id=current_user.id, resource_type="user",

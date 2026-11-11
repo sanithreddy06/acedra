@@ -27,7 +27,7 @@ def _mapping(raw: Optional[str]):
 
 
 @router.post("/preview", response_model=ImportPreviewResult)
-async def preview_data_import(
+def preview_data_import(
     file: UploadFile = File(...),
     import_type: str = Form("students"),
     column_mapping: Optional[str] = Form(None),
@@ -36,11 +36,11 @@ async def preview_data_import(
 ) -> Any:
     """Upload CSV or Excel file to preview data, detect duplicates, and catch errors before committing."""
     service = StudentIntelligenceService(db)
-    return await service.preview_import_file(file, import_type, current_user, _mapping(column_mapping))
+    return service.preview_import_file(file, import_type, current_user, _mapping(column_mapping))
 
 
 @router.post("/execute", response_model=ImportJobOut, status_code=status.HTTP_201_CREATED)
-async def execute_data_import(
+def execute_data_import(
     file: UploadFile = File(...),
     import_type: str = Form("students"),
     column_mapping: Optional[str] = Form(None),
@@ -49,7 +49,7 @@ async def execute_data_import(
 ) -> Any:
     """Commit batch import into institutional database with row-level validation."""
     service = StudentIntelligenceService(db)
-    job = await service.execute_import(file, import_type, current_user, _mapping(column_mapping))
+    job = service.execute_import(file, import_type, current_user, _mapping(column_mapping))
     return {
         "id": job.id,
         "filename": job.filename,

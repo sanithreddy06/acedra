@@ -247,18 +247,28 @@ class StudentIntelligenceService:
         if not student:
             raise HTTPException(status_code=404, detail="Student not found.")
 
-        # RBAC: Only Admin or student themselves for specific profile fields
-        if current_user.role == UserRole.STUDENT.value and student.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Unauthorized to modify this student record.")
+        # Only an administrator may change a student record. Students may update their own contact
+        # details. Faculty, mentors and placement officers have read access only.
+        is_admin = current_user.role == UserRole.ADMIN.value
+        is_self = current_user.role == UserRole.STUDENT.value and student.user_id == current_user.id
+        if not (is_admin or is_self):
+            raise HTTPException(status_code=403, detail="You are not authorised to modify this student record.")
 
         update_dict = data.model_dump(exclude_unset=True)
 
-        # If student themselves is updating, only allow personal contact info
-        if current_user.role == UserRole.STUDENT.value:
-            allowed_fields = {"phone", "address", "blood_group", "guardian_contact", "guardian_name"}
-            for k in list(update_dict.keys()):
-                if k not in allowed_fields:
-                    del update_dict[k]
+        if is_self:
+            allowed_fields = {"address", "blood_group", "guardian_contact", "guardian_name"}
+            update_dict = {k: v for k, v in update_dict.items() if k in allowed_fields}
+
+        # Columns that can never be empty: an explicit null is ignored rather than written.
+        for required in ("full_name", "program", "current_semester", "section", "status"):
+            if required in update_dict and update_dict[required] in (None, ""):
+                del update_dict[required]
+
+        if update_dict.get("assigned_mentor_id") is not None:
+            from app.models import Mentor
+            if not self.db.query(Mentor.id).filter(Mentor.id == update_dict["assigned_mentor_id"]).first():
+                raise HTTPException(status_code=422, detail="Mentor not found in your university.")
 
         if "full_name" in update_dict and current_user.role == UserRole.ADMIN.value:
             student.user.full_name = update_dict.pop("full_name")
@@ -811,7 +821,7 @@ class StudentIntelligenceService:
         return intern
 
     # 10. Data Import: Preview CSV/Excel
-    async def preview_import_file(
+    def preview_import_file(
         self, file: UploadFile, import_type: str, current_user: User, column_mapping: Optional[Dict[str, str]] = None
     ) -> ImportPreviewResult:
         if current_user.role != UserRole.ADMIN.value:
@@ -826,7 +836,7 @@ class StudentIntelligenceService:
                 detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import.",
             )
 
-        content = await file.read()
+        content = file.file.read()  # blocking read: these handlers run in the worker thread pool
         # Security: maximum 10MB file size limit
         if len(content) > 10 * 1024 * 1024:
             raise HTTPException(
@@ -1037,7 +1047,7 @@ class StudentIntelligenceService:
         return subject
 
     # 11. Execute Batch Import
-    async def execute_import(
+    def execute_import(
         self, file: UploadFile, import_type: str, current_user: User, column_mapping: Optional[Dict[str, str]] = None
     ) -> ImportJob:
         if current_user.role != UserRole.ADMIN.value:
@@ -1056,7 +1066,7 @@ class StudentIntelligenceService:
             raise HTTPException(status_code=422, detail=f"Unknown import type '{import_type}'. "
                                                         f"Use one of: {', '.join(IMPORT_TYPES)}.")
 
-        content = await file.read()
+        content = file.file.read()  # blocking read: these handlers run in the worker thread pool
         # Security: maximum 10MB file size limit
         if len(content) > 10 * 1024 * 1024:
             raise HTTPException(

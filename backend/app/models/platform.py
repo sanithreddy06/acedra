@@ -288,7 +288,7 @@ class AuthToken(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    purpose = Column(String(30), nullable=False)  # password_reset | email_verification
+    purpose = Column(String(30), nullable=False)  # password_reset | email_verification | refresh
     token_hash = Column(String(128), unique=True, index=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
@@ -306,8 +306,11 @@ class EmailMessage(Base):
     body_text = Column(Text, nullable=False)
     template = Column(String(50), nullable=False)
     provider = Column(String(30), default="log", nullable=False)
-    status = Column(String(20), default="logged", nullable=False)  # logged | sent | failed
+    status = Column(String(20), default="logged", index=True, nullable=False)  # logged | queued | sent | failed
     error = Column(String(500), nullable=True)
+    attempts = Column(Integer, default=0, server_default="0", nullable=False)
+    last_attempt_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_now, nullable=False)
 
 

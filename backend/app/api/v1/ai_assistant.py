@@ -255,7 +255,7 @@ def get_document_details(
 
 
 @router.post("/documents/upload", response_model=DocumentResponse)
-async def upload_document(
+def upload_document(
     file: UploadFile = File(...),
     title: str = Form(...),
     category: str = Form(DocumentCategory.GENERAL_POLICY.value),
@@ -277,7 +277,8 @@ async def upload_document(
             detail=f"Unsupported file format '.{ext}'. Only PDF, DOCX, TXT, and Markdown files are accepted.",
         )
 
-    file_bytes = await file.read()
+    # Read at most one byte over the limit, so an oversized upload is rejected without buffering all of it.
+    file_bytes = file.file.read(settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     if len(file_bytes) > settings.MAX_UPLOAD_MB * 1024 * 1024:

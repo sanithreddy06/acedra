@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
 
 from app.core.config import settings
 
@@ -18,6 +18,18 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(password_bytes, hashed_bytes)
     except (ValueError, TypeError, AttributeError):  # malformed or missing hash: never a match
         return False
+
+
+_DUMMY_HASH: Optional[str] = None
+
+
+def burn_password_check(plain_password: str) -> None:
+    """Spend the same time as a real password check when the account does not exist, so response time
+    does not reveal which email addresses are registered."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = get_password_hash(secrets.token_urlsafe(16))
+    verify_password(plain_password, _DUMMY_HASH)
 
 
 def get_password_hash(password: str) -> str:
@@ -56,8 +68,9 @@ def create_access_token(
     return encoded_jwt
 
 
-def create_refresh_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None, token_version: int = 0) -> str:
-    """Create a signed JWT refresh token."""
+def create_refresh_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None, token_version: int = 0,
+                         token_id: Optional[str] = None) -> str:
+    """Create a signed JWT refresh token. ``token_id`` (jti) identifies the single-use session record."""
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
@@ -68,6 +81,7 @@ def create_refresh_token(subject: Union[str, Any], expires_delta: Optional[timed
         "sub": str(subject),
         "type": "refresh",
         "ver": token_version,
+        "jti": token_id or secrets.token_urlsafe(24),
     }
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -76,9 +90,9 @@ def create_refresh_token(subject: Union[str, Any], expires_delta: Optional[timed
 def decode_token(token: str) -> Optional[dict]:
     """Decode and validate a JWT token."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
-    except JWTError:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
+                          options={"require": ["exp", "sub", "type"]})
+    except jwt.PyJWTError:
         return None
 
 

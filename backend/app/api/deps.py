@@ -24,9 +24,12 @@ MODULE_PREFIXES = {
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Client address for audit records.
+
+    Never read X-Forwarded-For here: a caller can put anything in it. The API server is started with
+    trusted proxy headers (see docker/Dockerfile.backend.prod), which rewrites ``request.client`` from the
+    header only when the request really came through our reverse proxy.
+    """
     return request.client.host if request.client else "unknown"
 
 

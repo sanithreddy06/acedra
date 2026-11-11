@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.clock import utcnow
 from app.core.config import settings
 from app.core.security import (
+    burn_password_check,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -28,6 +29,7 @@ from app.repositories.audit_repo import AuditRepository
 from app.services.email_service import EmailService
 
 GENERIC_LOGIN_ERROR = "Incorrect email or password"
+LOCKED_ERROR = "Too many failed sign-in attempts. Try again later or reset your password."
 
 
 class AuthService:
@@ -43,15 +45,38 @@ class AuthService:
     def authenticate_user(self, email: str, password: str, ip_address: Optional[str] = None,
                           user_agent: Optional[str] = None) -> User:
         user = self._get_by_email(email)
-        if not user or not verify_password(password, user.hashed_password):
+        now = utcnow()
+        if user and user.locked_until and user.locked_until > now:
+            burn_password_check(password)
+            self.audit_repo.log(
+                action="LOGIN_BLOCKED", user_id=user.id, resource_type="auth", ip_address=ip_address,
+                user_agent=(user_agent or "")[:250], university_id=user.university_id,
+                details={"reason": "account_locked"},
+            )
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=LOCKED_ERROR)
+        if user:
+            password_ok = verify_password(password, user.hashed_password)
+        else:
+            burn_password_check(password)  # same cost as a real check: timing must not reveal the account
+            password_ok = False
+        if not password_ok:
+            locked = False
+            if user:
+                user.failed_login_count = (user.failed_login_count or 0) + 1
+                if user.failed_login_count >= settings.LOGIN_MAX_FAILED_ATTEMPTS:
+                    user.locked_until = now + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+                    user.failed_login_count = 0
+                    locked = True
             self.audit_repo.log(
                 action="LOGIN_FAILED", user_id=user.id if user else None, resource_type="auth",
                 ip_address=ip_address, user_agent=(user_agent or "")[:250],
                 university_id=user.university_id if user else None,
-                details={"reason": "invalid_credentials"},
+                details={"reason": "invalid_credentials", "account_locked": locked},
             )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=GENERIC_LOGIN_ERROR,
                                 headers={"WWW-Authenticate": "Bearer"})
+        user.failed_login_count = 0
+        user.locked_until = None
         if not user.is_verified:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="Please accept your invitation and verify your email before signing in.")
@@ -64,7 +89,7 @@ class AuthService:
             if not uni or uni.status not in allowed:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                     detail="Your university workspace is not active yet.")
-        user.last_login_at = utcnow()
+        user.last_login_at = now
         self.audit_repo.log(
             action="LOGIN_SUCCESS", user_id=user.id, resource_type="auth", resource_id=str(user.id),
             ip_address=ip_address, user_agent=(user_agent or "")[:250], university_id=user.university_id,
@@ -111,7 +136,15 @@ class AuthService:
             subject=user.id, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
             role=user.role, tenant_id=user.university_id, token_version=user.token_version or 0,
         )
-        refresh_token = create_refresh_token(subject=user.id, token_version=user.token_version or 0)
+        # Each refresh token is single use: its id is recorded (hashed) and marked used when exchanged.
+        token_id = generate_url_token()
+        refresh_token = create_refresh_token(subject=user.id, token_version=user.token_version or 0,
+                                             token_id=token_id)
+        now = utcnow()
+        self.db.query(AuthToken).filter(AuthToken.user_id == user.id, AuthToken.purpose == "refresh",
+                                        AuthToken.expires_at < now).delete(synchronize_session=False)
+        self.db.add(AuthToken(user_id=user.id, purpose="refresh", token_hash=hash_token(token_id),
+                              expires_at=now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)))
         self.db.commit()
         return {
             "access_token": access_token,
@@ -123,11 +156,29 @@ class AuthService:
 
     def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
         payload = decode_token(refresh_token)
-        if not payload or payload.get("type") != "refresh":
+        ended = HTTPException(status_code=401, detail="Session has ended. Please sign in again.")
+        if not payload or payload.get("type") != "refresh" or not payload.get("jti"):
             raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-        user = self.db.query(User).filter(User.id == int(payload.get("sub", 0))).first()
+        try:
+            user_id = int(payload.get("sub", 0))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token") from None
+        user = self.db.query(User).filter(User.id == user_id).first()
         if not user or not user.is_active or payload.get("ver", 0) != (user.token_version or 0):
-            raise HTTPException(status_code=401, detail="Session has ended. Please sign in again.")
+            raise ended
+        record = self.db.query(AuthToken).filter(AuthToken.token_hash == hash_token(payload["jti"]),
+                                                 AuthToken.purpose == "refresh",
+                                                 AuthToken.user_id == user.id).with_for_update().first()
+        if record is None:
+            raise ended
+        if record.used_at is not None:
+            # A refresh token was presented twice: it may have been copied. End every session for the account.
+            user.token_version = (user.token_version or 0) + 1
+            self.audit_repo.log(action="REFRESH_TOKEN_REUSE", user_id=user.id, resource_type="auth",
+                                university_id=user.university_id)
+            self.db.commit()
+            raise ended
+        record.used_at = utcnow()
         return self.generate_tokens(user)
 
     def logout(self, user: User, ip_address: Optional[str] = None) -> None:
@@ -173,6 +224,7 @@ class AuthService:
         user = self._get_by_email(email)
         if not user or not user.is_active or not user.is_verified:
             return  # never reveal whether an account exists
+        self._expire_reset_tokens(user.id)  # only the newest link works
         token = generate_url_token()
         self.db.add(AuthToken(user_id=user.id, purpose="password_reset", token_hash=hash_token(token),
                               expires_at=utcnow() + timedelta(minutes=settings.PASSWORD_RESET_TTL_MINUTES)))
@@ -187,6 +239,11 @@ class AuthService:
         self.audit_repo.log(action="PASSWORD_RESET_REQUESTED", user_id=user.id, resource_type="auth",
                             ip_address=ip_address, university_id=user.university_id)
 
+    def _expire_reset_tokens(self, user_id: int) -> None:
+        self.db.query(AuthToken).filter(AuthToken.user_id == user_id, AuthToken.purpose == "password_reset",
+                                        AuthToken.used_at.is_(None)).update({"used_at": utcnow()},
+                                                                            synchronize_session=False)
+
     def confirm_password_reset(self, token: str, new_password: str, ip_address: Optional[str] = None) -> None:
         record = self.db.query(AuthToken).filter(AuthToken.token_hash == hash_token(token),
                                                  AuthToken.purpose == "password_reset").first()
@@ -198,7 +255,10 @@ class AuthService:
         user = self.db.query(User).filter(User.id == record.user_id).first()
         user.hashed_password = get_password_hash(new_password)
         user.token_version = (user.token_version or 0) + 1
+        user.failed_login_count = 0
+        user.locked_until = None  # proving control of the mailbox clears a lockout
         record.used_at = utcnow()
+        self._expire_reset_tokens(user.id)
         self.audit_repo.log(action="PASSWORD_RESET_SUCCESS", user_id=user.id, resource_type="auth",
                             ip_address=ip_address, university_id=user.university_id)
 
@@ -210,5 +270,6 @@ class AuthService:
             raise HTTPException(status_code=422, detail=problem)
         user.hashed_password = get_password_hash(new_password)
         user.token_version = (user.token_version or 0) + 1
+        self._expire_reset_tokens(user.id)
         self.audit_repo.log(action="PASSWORD_CHANGED", user_id=user.id, resource_type="auth",
                             university_id=user.university_id)

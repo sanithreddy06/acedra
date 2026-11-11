@@ -26,6 +26,7 @@ services:
       ENVIRONMENT: development
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acedra}:${POSTGRES_PASSWORD:-acedra-dev-password}@db:5432/${POSTGRES_DB:-acedra}
       SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-secret-change-me}
+      ALLOW_INSECURE_DEV_SECRET: "true"  # local demo stack only; never set this anywhere reachable
       AUTO_CREATE_SCHEMA: "false"
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       PUBLIC_APP_URL: http://localhost:3000
