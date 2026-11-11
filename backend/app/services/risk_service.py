@@ -1,29 +1,129 @@
-import logging
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc
+"""Early-warning risk identification (module 2).
 
-from app.models.risk import (
-    RiskRule,
-    RiskAlert,
-    RiskEvaluation,
-    RiskAlertHistory,
-    AlertAssignment,
-    InAppNotification,
-)
-from app.models.profile import Student, Faculty, Mentor
+Risk is rule-based and explainable — there is no predictive model. ``evaluate_risk`` derives indicators
+once per student (``_StudentRiskMetrics``), checks each active rule with the observer registered for
+its ``indicator_type`` (``_INDICATOR_OBSERVERS``) and raises an alert when it triggers. An alert that is
+still open for the same student and rule is refreshed instead of duplicated. ``alert_summary`` and
+``alert_detail`` are the serialisers used by the API.
+"""
+import logging
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy import desc, func
+from sqlalchemy.orm import Session, joinedload
+
+from app.core.clock import utcnow
 from app.models.academic import (
-    SubjectAttendance,
     StudentAssessment,
     StudentSemesterRecord,
+    SubjectAttendance,
     SubjectResult,
-    Subject,
-    Semester,
+)
+from app.models.profile import Mentor, Student
+from app.models.risk import (
+    AlertAssignment,
+    InAppNotification,
+    RiskAlert,
+    RiskAlertHistory,
+    RiskEvaluation,
+    RiskRule,
 )
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+# Alerts in these statuses still need attention; RESOLVED and CLOSED do not.
+ACTIVE_ALERT_STATUSES = ("FLAGGED", "ACKNOWLEDGED", "UNDER_REVIEW")
+SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MODERATE": 2, "NORMAL": 1}
+
+
+def alert_summary(alert: RiskAlert) -> Dict[str, Any]:
+    """Flat, display-ready view of an alert with its student, rule, subject and assigned mentor."""
+    student = alert.student
+    rule = alert.rule
+    mentor = alert.assigned_mentor
+    return {
+        "id": alert.id,
+        "student_id": alert.student_id,
+        "student_name": student.user.full_name if student and student.user else student.roll_number,
+        "student_usn": student.usn if student else None,
+        "student_srn": student.srn if student else None,
+        "student_department": student.department.name if student and student.department else None,
+        "student_semester": student.current_semester if student else None,
+        "student_section": student.section if student else None,
+        "rule_id": alert.rule_id,
+        "rule_name": rule.name if rule else None,
+        "rule_code": rule.code if rule else None,
+        "rule_category": rule.category if rule else None,
+        "severity": alert.severity,
+        "status": alert.status,
+        "observed_value": alert.observed_value,
+        "observed_display": alert.observed_display,
+        "threshold_value": alert.threshold_value,
+        "threshold_display": alert.threshold_display,
+        "academic_period": alert.academic_period,
+        "subject_id": alert.subject_id,
+        "subject_name": alert.subject.name if alert.subject else None,
+        "detected_date": alert.detected_date,
+        "is_system_generated": alert.is_system_generated,
+        "ai_explanation": alert.ai_explanation,
+        "suggested_action": alert.suggested_action,
+        "assigned_mentor_id": alert.assigned_mentor_id,
+        "assigned_mentor_name": mentor.user.full_name if mentor and mentor.user else None,
+        "review_notes": alert.review_notes,
+        "resolved_by_id": alert.resolved_by_id,
+        "resolved_at": alert.resolved_at,
+        "resolution_reason": alert.resolution_reason,
+        "created_at": alert.created_at,
+    }
+
+
+def alert_detail(alert: RiskAlert) -> Dict[str, Any]:
+    """Alert summary plus its audit history and mentor assignments."""
+    return {
+        "alert": alert_summary(alert),
+        "history": [
+            {
+                "id": h.id,
+                "alert_id": h.alert_id,
+                "action": h.action,
+                "old_status": h.old_status,
+                "new_status": h.new_status,
+                "notes": h.notes,
+                "performed_by_id": h.performed_by_id,
+                "performed_by_name": h.performed_by.full_name if h.performed_by else f"User {h.performed_by_id}",
+                "created_at": h.created_at,
+            }
+            for h in alert.history
+        ],
+        "assignments": [
+            {
+                "id": a.id,
+                "alert_id": a.alert_id,
+                "mentor_id": a.mentor_id,
+                "mentor_name": a.mentor.user.full_name if a.mentor and a.mentor.user else f"Mentor {a.mentor_id}",
+                "assigned_by_id": a.assigned_by_id,
+                "assigned_at": a.assigned_at,
+                "notes": a.notes,
+                "status": a.status,
+            }
+            for a in alert.assignments
+        ],
+    }
+
+
+def highest_active_severity(alerts: List[RiskAlert]) -> str:
+    """The most severe level among alerts that are still open; NORMAL when none are."""
+    highest, highest_rank = "NORMAL", 0
+    for alert in alerts:
+        if alert.status not in ACTIVE_ALERT_STATUSES:
+            continue
+        rank = SEVERITY_RANK.get(alert.severity, 0)
+        if rank > highest_rank:
+            highest, highest_rank = alert.severity, rank
+    return highest
 
 
 class AIExplanationService:
@@ -340,7 +440,7 @@ class RiskService:
         """
         # Ensure rules exist
         cls.seed_default_rules_if_needed(db, user_id)
-        active_rules = db.query(RiskRule).filter(RiskRule.is_active == True).all()
+        active_rules = db.query(RiskRule).filter(RiskRule.is_active.is_(True)).all()
 
         # Build student query
         student_query = db.query(Student).filter(Student.status == "Active")
@@ -416,7 +516,7 @@ class RiskService:
         evaluation.moderate_count = moderate_c
         evaluation.normal_count = normal_c
         evaluation.status = "COMPLETED"
-        evaluation.completed_at = datetime.utcnow()
+        evaluation.completed_at = utcnow()
         evaluation.summary = {
             "new_alerts_count": len(new_alerts),
             "updated_alerts_count": len(updated_alerts),
@@ -435,241 +535,90 @@ class RiskService:
         evaluation_id: int,
         active_alert_map: Dict[Tuple[int, int], RiskAlert],
     ) -> List[Tuple[RiskAlert, bool]]:
+        """Apply every active rule to one student; return (alert, is_new) for each rule that triggered.
+
+        An alert that is still open for the same (student, rule) is refreshed in place rather than
+        duplicated, so repeated evaluations never stack alerts.
+        """
+        metrics = _StudentRiskMetrics.from_student(student)
         results: List[Tuple[RiskAlert, bool]] = []
-
-        # Precompute student metrics
-        current_period = f"Semester {student.current_semester}"
-        student_name = student.user.full_name if student.user else student.roll_number
-
-        # 1. Attendance Metrics: overall and per-subject
-        att_records = student.attendance_records or []
-        overall_attendance = student.attendance_percentage
-        if att_records:
-            total_classes = sum(r.total_classes for r in att_records)
-            attended_classes = sum(r.attended_classes for r in att_records)
-            if total_classes > 0:
-                overall_attendance = round((attended_classes / total_classes) * 100.0, 2)
-
-        lowest_subject_att = None
-        if att_records:
-            lowest_subject_att = min(att_records, key=lambda r: r.attendance_percentage)
-
-        # 2. Assessment Metrics: average and lowest
-        assessments = student.assessments or []
-        avg_cia = 0.0
-        lowest_assessment = None
-        if assessments:
-            avg_cia = round(sum(a.percentage for a in assessments) / len(assessments), 2)
-            lowest_assessment = min(assessments, key=lambda a: a.percentage)
-
-        # 3. Academic Progression: SGPA drops across semesters
-        sem_records = sorted(student.semester_records or [], key=lambda r: r.semester_number)
-        sgpa_drop = 0.0
-        prev_sem_rec = None
-        curr_sem_rec = None
-        if len(sem_records) >= 2:
-            prev_sem_rec = sem_records[-2]
-            curr_sem_rec = sem_records[-1]
-            sgpa_drop = max(0.0, round(prev_sem_rec.sgpa - curr_sem_rec.sgpa, 2))
-
-        # 4. Backlogs
-        total_backlogs = 0
-        failed_subject_names = []
-        if sem_records:
-            total_backlogs = sem_records[-1].backlogs_count
-        for res in student.subject_results or []:
-            if res.is_backlog:
-                if res.subject and res.subject.name not in failed_subject_names:
-                    failed_subject_names.append(res.subject.name)
-        total_backlogs = max(total_backlogs, len(failed_subject_names))
-
-        # Evaluate each active rule
         for rule in rules:
-            triggered = False
-            observed_val = 0.0
-            observed_display = ""
-            ctx_data: Dict[str, Any] = {}
-            subject_id = None
-
-            # -------------------------------------------------------------
-            # Attendance Rules
-            # -------------------------------------------------------------
-            if rule.indicator_type == "attendance_percentage":
-                # Check overall or lowest subject attendance
-                att_to_check = overall_attendance
-                if lowest_subject_att and lowest_subject_att.attendance_percentage < att_to_check:
-                    att_to_check = lowest_subject_att.attendance_percentage
-                    subject_id = lowest_subject_att.subject_id
-                    ctx_data["subject_name"] = lowest_subject_att.subject.name if lowest_subject_att.subject else "Course"
-                    ctx_data["attended_classes"] = lowest_subject_att.attended_classes
-                    ctx_data["total_classes"] = lowest_subject_att.total_classes
-                else:
-                    ctx_data["subject_name"] = "Overall Curriculum"
-                    ctx_data["attended_classes"] = sum(r.attended_classes for r in att_records) if att_records else 0
-                    ctx_data["total_classes"] = sum(r.total_classes for r in att_records) if att_records else 0
-
-                observed_val = att_to_check
-                observed_display = f"{observed_val:.1f}% ({ctx_data['attended_classes']}/{ctx_data['total_classes']} classes)"
-                triggered = cls._compare(observed_val, rule.operator, rule.threshold_value)
-
-            # -------------------------------------------------------------
-            # Assessment Percentage Rules
-            # -------------------------------------------------------------
-            elif rule.indicator_type == "assessment_percentage":
-                if assessments:
-                    # Check lowest CIA or average
-                    if lowest_assessment and cls._compare(lowest_assessment.percentage, rule.operator, rule.threshold_value):
-                        observed_val = lowest_assessment.percentage
-                        subject_id = lowest_assessment.subject_id
-                        ctx_data["subject_name"] = lowest_assessment.subject.name if lowest_assessment.subject else "Course"
-                        ctx_data["assessment_name"] = lowest_assessment.assessment_type
-                        ctx_data["marks_obtained"] = lowest_assessment.marks_obtained
-                        ctx_data["max_marks"] = lowest_assessment.max_marks
-                        observed_display = f"{observed_val:.1f}% ({lowest_assessment.marks_obtained}/{lowest_assessment.max_marks})"
-                        triggered = True
-                    else:
-                        observed_val = avg_cia
-                        observed_display = f"{observed_val:.1f}% CIA Average"
-                        ctx_data["subject_name"] = "All Subjects CIA Average"
-                        ctx_data["assessment_name"] = "Internal Evaluations Average"
-                        ctx_data["marks_obtained"] = observed_val
-                        ctx_data["max_marks"] = 100.0
-                        triggered = cls._compare(observed_val, rule.operator, rule.threshold_value)
-                else:
-                    triggered = False
-
-            # -------------------------------------------------------------
-            # SGPA Drop Rule
-            # -------------------------------------------------------------
-            elif rule.indicator_type == "sgpa_drop":
-                observed_val = sgpa_drop
-                observed_display = f"Δ -{observed_val:.2f} SGPA"
-                ctx_data["prev_sgpa"] = prev_sem_rec.sgpa if prev_sem_rec else 0.0
-                ctx_data["curr_sgpa"] = curr_sem_rec.sgpa if curr_sem_rec else 0.0
-                ctx_data["prev_sem"] = f"Semester {prev_sem_rec.semester_number}" if prev_sem_rec else "Previous"
-                ctx_data["curr_sem"] = f"Semester {curr_sem_rec.semester_number}" if curr_sem_rec else current_period
-                triggered = (sgpa_drop > 0.0) and cls._compare(observed_val, rule.operator, rule.threshold_value)
-
-            # -------------------------------------------------------------
-            # Backlog Count Rule
-            # -------------------------------------------------------------
-            elif rule.indicator_type == "backlog_count":
-                observed_val = float(total_backlogs)
-                observed_display = f"{total_backlogs} Active Backlog(s)"
-                ctx_data["failed_subjects"] = failed_subject_names
-                triggered = (total_backlogs > 0) and cls._compare(observed_val, rule.operator, rule.threshold_value)
-
-            # -------------------------------------------------------------
-            # Missing Assessments Rule
-            # -------------------------------------------------------------
-            elif rule.indicator_type == "missing_assessments":
-                # If student is enrolled in subjects but has 0 assessments, or has incomplete submissions
-                missing_count = 0
-                if not assessments and (att_records or student.current_semester >= 1):
-                    missing_count = 1
-                observed_val = float(missing_count)
-                observed_display = f"{missing_count} Missing Evaluation(s)"
-                ctx_data["subject_name"] = "Enrolled Curriculum"
-                triggered = cls._compare(observed_val, rule.operator, rule.threshold_value)
-
-            # -------------------------------------------------------------
-            # Composite Rule
-            # -------------------------------------------------------------
-            elif rule.indicator_type == "composite":
-                config = rule.conditions_config or {}
-                min_att = float(config.get("min_attendance", 75.0))
-                max_cia = float(config.get("max_assessment_pct", 50.0))
-                att_cond = overall_attendance < min_att
-                cia_cond = avg_cia < max_cia and len(assessments) > 0
-                if att_cond and cia_cond:
-                    observed_val = 1.0
-                    observed_display = f"Att: {overall_attendance:.1f}%, CIA: {avg_cia:.1f}%"
-                    ctx_data["attendance_val"] = overall_attendance
-                    ctx_data["cia_val"] = avg_cia
-                    triggered = True
-                else:
-                    triggered = False
-
-            # If triggered, handle duplicate prevention or alert creation
-            if triggered:
-                key = (student.id, rule.id)
-                threshold_display = f"{rule.operator} {rule.threshold_value:.1f}%" if "percentage" in rule.indicator_type else f"{rule.operator} {rule.threshold_value}"
-
-                ai_expl = AIExplanationService.generate_explanation(
-                    student_name=student_name,
-                    student_usn=student.usn,
-                    rule_category=rule.category,
-                    indicator_type=rule.indicator_type,
-                    observed_value=observed_val,
-                    threshold_value=rule.threshold_value,
-                    operator=rule.operator,
-                    academic_period=current_period,
-                    context_data=ctx_data,
-                )
-
-                if key in active_alert_map:
-                    # Update existing active alert in-place (PREVENTS DUPLICATES)
-                    existing_alert = active_alert_map[key]
-                    existing_alert.evaluation_id = evaluation_id
-                    existing_alert.observed_value = observed_val
-                    existing_alert.observed_display = observed_display
-                    existing_alert.threshold_value = rule.threshold_value
-                    existing_alert.threshold_display = threshold_display
-                    existing_alert.ai_explanation = ai_expl
-                    existing_alert.detected_date = datetime.utcnow()
-                    results.append((existing_alert, False))
-                else:
-                    # Create new alert
-                    new_alert = RiskAlert(
-                        student_id=student.id,
-                        rule_id=rule.id,
-                        evaluation_id=evaluation_id,
-                        severity=rule.severity,
-                        status="FLAGGED",
-                        observed_value=observed_val,
-                        observed_display=observed_display,
-                        threshold_value=rule.threshold_value,
-                        threshold_display=threshold_display,
-                        academic_period=current_period,
-                        subject_id=subject_id,
-                        detected_date=datetime.utcnow(),
-                        is_system_generated=True,
-                        ai_explanation=ai_expl,
-                        suggested_action=rule.suggested_action,
-                        assigned_mentor_id=student.assigned_mentor_id,
-                    )
-                    db.add(new_alert)
-                    db.flush()
-
-                    # Audit history for alert creation
-                    history_entry = RiskAlertHistory(
-                        alert_id=new_alert.id,
-                        action="FLAGGED",
-                        old_status=None,
-                        new_status="FLAGGED",
-                        notes=f"System generated early-warning alert based on rule '{rule.name}' ({rule.code}).",
-                        performed_by_id=student.user_id,
-                    )
-                    db.add(history_entry)
-
-                    active_alert_map[key] = new_alert
-                    results.append((new_alert, True))
-
+            observe = _INDICATOR_OBSERVERS.get(rule.indicator_type)
+            if observe is None:
+                continue
+            observation = observe(metrics, rule)
+            if observation.triggered:
+                results.append(cls._record_alert(db, metrics, rule, observation, evaluation_id, active_alert_map))
         return results
 
     @staticmethod
-    def _compare(val: float, op: str, threshold: float) -> bool:
-        if op == "<":
-            return val < threshold
-        elif op == "<=":
-            return val <= threshold
-        elif op == ">":
-            return val > threshold
-        elif op == ">=":
-            return val >= threshold
-        elif op == "==":
-            return abs(val - threshold) < 1e-4
-        return False
+    def _record_alert(
+        db: Session,
+        metrics: "_StudentRiskMetrics",
+        rule: RiskRule,
+        observation: "_RuleObservation",
+        evaluation_id: int,
+        active_alert_map: Dict[Tuple[int, int], RiskAlert],
+    ) -> Tuple[RiskAlert, bool]:
+        student = metrics.student
+        key = (student.id, rule.id)
+        if "percentage" in rule.indicator_type:
+            threshold_display = f"{rule.operator} {rule.threshold_value:.1f}%"
+        else:
+            threshold_display = f"{rule.operator} {rule.threshold_value}"
+        explanation = AIExplanationService.generate_explanation(
+            student_name=metrics.student_name,
+            student_usn=student.usn,
+            rule_category=rule.category,
+            indicator_type=rule.indicator_type,
+            observed_value=observation.value,
+            threshold_value=rule.threshold_value,
+            operator=rule.operator,
+            academic_period=metrics.current_period,
+            context_data=observation.context,
+        )
+
+        existing = active_alert_map.get(key)
+        if existing is not None:
+            existing.evaluation_id = evaluation_id
+            existing.observed_value = observation.value
+            existing.observed_display = observation.display
+            existing.threshold_value = rule.threshold_value
+            existing.threshold_display = threshold_display
+            existing.ai_explanation = explanation
+            existing.detected_date = utcnow()
+            return existing, False
+
+        alert = RiskAlert(
+            student_id=student.id,
+            rule_id=rule.id,
+            evaluation_id=evaluation_id,
+            severity=rule.severity,
+            status="FLAGGED",
+            observed_value=observation.value,
+            observed_display=observation.display,
+            threshold_value=rule.threshold_value,
+            threshold_display=threshold_display,
+            academic_period=metrics.current_period,
+            subject_id=observation.subject_id,
+            detected_date=utcnow(),
+            is_system_generated=True,
+            ai_explanation=explanation,
+            suggested_action=rule.suggested_action,
+            assigned_mentor_id=student.assigned_mentor_id,
+        )
+        db.add(alert)
+        db.flush()
+        db.add(RiskAlertHistory(
+            alert_id=alert.id,
+            action="FLAGGED",
+            old_status=None,
+            new_status="FLAGGED",
+            notes=f"System generated early-warning alert based on rule '{rule.name}' ({rule.code}).",
+            performed_by_id=student.user_id,
+        ))
+        active_alert_map[key] = alert
+        return alert, True
 
     @staticmethod
     def _dispatch_alert_notifications(db: Session, alert: RiskAlert) -> None:
@@ -730,7 +679,9 @@ class RiskService:
     ) -> Tuple[List[RiskAlert], int]:
         query = db.query(RiskAlert).join(RiskAlert.student).join(RiskAlert.rule)
 
-        if status:
+        if status == "ACTIVE":  # any alert still awaiting resolution
+            query = query.filter(RiskAlert.status.notin_(["RESOLVED", "CLOSED"]))
+        elif status:
             query = query.filter(RiskAlert.status == status)
         if severity:
             query = query.filter(RiskAlert.severity == severity)
@@ -799,7 +750,7 @@ class RiskService:
         old_status = alert.status
         alert.status = "ACKNOWLEDGED"
         if notes:
-            alert.review_notes = (alert.review_notes or "") + f"\n[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Acknowledged: {notes}"
+            alert.review_notes = (alert.review_notes or "") + f"\n[{utcnow().strftime('%Y-%m-%d %H:%M')}] Acknowledged: {notes}"
 
         history = RiskAlertHistory(
             alert_id=alert.id,
@@ -816,7 +767,7 @@ class RiskService:
 
     @staticmethod
     def add_review_note(db: Session, alert: RiskAlert, user_id: int, notes: str) -> RiskAlert:
-        time_tag = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        time_tag = utcnow().strftime("%Y-%m-%d %H:%M")
         alert.review_notes = (alert.review_notes or "") + f"\n[{time_tag}] {notes}"
 
         history = RiskAlertHistory(
@@ -893,9 +844,9 @@ class RiskService:
         alert.status = "RESOLVED"
         alert.resolution_reason = resolution_reason
         alert.resolved_by_id = user_id
-        alert.resolved_at = datetime.utcnow()
+        alert.resolved_at = utcnow()
         if review_notes:
-            alert.review_notes = (alert.review_notes or "") + f"\n[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Resolved: {review_notes}"
+            alert.review_notes = (alert.review_notes or "") + f"\n[{utcnow().strftime('%Y-%m-%d %H:%M')}] Resolved: {review_notes}"
 
         history = RiskAlertHistory(
             alert_id=alert.id,
@@ -917,7 +868,7 @@ class RiskService:
         alert.resolution_reason = None
         alert.resolved_by_id = None
         alert.resolved_at = None
-        alert.review_notes = (alert.review_notes or "") + f"\n[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Reopened: {reason}"
+        alert.review_notes = (alert.review_notes or "") + f"\n[{utcnow().strftime('%Y-%m-%d %H:%M')}] Reopened: {reason}"
 
         history = RiskAlertHistory(
             alert_id=alert.id,
@@ -1029,7 +980,7 @@ class RiskService:
     def get_user_notifications(db: Session, user_id: int, unread_only: bool = False, limit: int = 20) -> List[InAppNotification]:
         query = db.query(InAppNotification).filter(InAppNotification.user_id == user_id)
         if unread_only:
-            query = query.filter(InAppNotification.is_read == False)
+            query = query.filter(InAppNotification.is_read.is_(False))
         return query.order_by(desc(InAppNotification.created_at)).limit(limit).all()
 
     @staticmethod
@@ -1043,3 +994,202 @@ class RiskService:
             db.commit()
             return True
         return False
+
+
+# ---------------------------------------------------------------------------
+# Rule evaluation building blocks
+# ---------------------------------------------------------------------------
+def compare(value: float, operator: str, threshold: float) -> bool:
+    """Apply a rule operator; unknown operators never trigger."""
+    if operator == "<":
+        return value < threshold
+    if operator == "<=":
+        return value <= threshold
+    if operator == ">":
+        return value > threshold
+    if operator == ">=":
+        return value >= threshold
+    if operator == "==":
+        return abs(value - threshold) < 1e-4
+    return False
+
+
+@dataclass
+class _StudentRiskMetrics:
+    """Indicators derived once per student, then checked against every rule."""
+
+    student: Student
+    student_name: str
+    current_period: str
+    attendance_records: List[SubjectAttendance]
+    overall_attendance: float
+    lowest_subject_attendance: Optional[SubjectAttendance]
+    assessments: List[StudentAssessment]
+    average_assessment: float
+    lowest_assessment: Optional[StudentAssessment]
+    previous_semester: Optional[StudentSemesterRecord]
+    current_semester: Optional[StudentSemesterRecord]
+    sgpa_drop: float
+    backlog_count: int
+    failed_subject_names: List[str]
+
+    @classmethod
+    def from_student(cls, student: Student) -> "_StudentRiskMetrics":
+        # Attendance: recomputed from subject records when available, else the stored percentage.
+        records = student.attendance_records or []
+        overall = student.attendance_percentage
+        if records:
+            total = sum(r.total_classes for r in records)
+            attended = sum(r.attended_classes for r in records)
+            if total > 0:
+                overall = round((attended / total) * 100.0, 2)
+        lowest_att = min(records, key=lambda r: r.attendance_percentage) if records else None
+
+        assessments = student.assessments or []
+        average = round(sum(a.percentage for a in assessments) / len(assessments), 2) if assessments else 0.0
+        lowest_asm = min(assessments, key=lambda a: a.percentage) if assessments else None
+
+        # SGPA drop between the two most recent semesters (never negative).
+        semesters = sorted(student.semester_records or [], key=lambda r: r.semester_number)
+        previous = current = None
+        drop = 0.0
+        if len(semesters) >= 2:
+            previous, current = semesters[-2], semesters[-1]
+            drop = max(0.0, round(previous.sgpa - current.sgpa, 2))
+
+        # Backlogs: the larger of the latest semester's count and distinct failed subjects on record.
+        failed: List[str] = []
+        for res in student.subject_results or []:
+            if res.is_backlog and res.subject and res.subject.name not in failed:
+                failed.append(res.subject.name)
+        backlogs = max(semesters[-1].backlogs_count if semesters else 0, len(failed))
+
+        return cls(
+            student=student,
+            student_name=student.user.full_name if student.user else student.roll_number,
+            current_period=f"Semester {student.current_semester}",
+            attendance_records=records,
+            overall_attendance=overall,
+            lowest_subject_attendance=lowest_att,
+            assessments=assessments,
+            average_assessment=average,
+            lowest_assessment=lowest_asm,
+            previous_semester=previous,
+            current_semester=current,
+            sgpa_drop=drop,
+            backlog_count=backlogs,
+            failed_subject_names=failed,
+        )
+
+
+@dataclass
+class _RuleObservation:
+    triggered: bool = False
+    value: float = 0.0
+    display: str = ""
+    context: Dict[str, Any] = field(default_factory=dict)
+    subject_id: Optional[int] = None
+
+
+def _observe_attendance(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservation:
+    """Checks whichever is lower: overall attendance or the weakest subject's attendance."""
+    obs = _RuleObservation(value=m.overall_attendance)
+    lowest = m.lowest_subject_attendance
+    if lowest and lowest.attendance_percentage < obs.value:
+        obs.value = lowest.attendance_percentage
+        obs.subject_id = lowest.subject_id
+        obs.context = {"subject_name": lowest.subject.name if lowest.subject else "Course",
+                       "attended_classes": lowest.attended_classes, "total_classes": lowest.total_classes}
+    else:
+        records = m.attendance_records
+        obs.context = {"subject_name": "Overall Curriculum",
+                       "attended_classes": sum(r.attended_classes for r in records) if records else 0,
+                       "total_classes": sum(r.total_classes for r in records) if records else 0}
+    obs.display = f"{obs.value:.1f}% ({obs.context['attended_classes']}/{obs.context['total_classes']} classes)"
+    obs.triggered = compare(obs.value, rule.operator, rule.threshold_value)
+    return obs
+
+
+def _observe_assessments(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservation:
+    """Flags the weakest assessment if it breaches the threshold, otherwise checks the average."""
+    if not m.assessments:
+        return _RuleObservation()
+    lowest = m.lowest_assessment
+    if lowest and compare(lowest.percentage, rule.operator, rule.threshold_value):
+        return _RuleObservation(
+            triggered=True,
+            value=lowest.percentage,
+            display=f"{lowest.percentage:.1f}% ({lowest.marks_obtained}/{lowest.max_marks})",
+            subject_id=lowest.subject_id,
+            context={"subject_name": lowest.subject.name if lowest.subject else "Course",
+                     "assessment_name": lowest.assessment_type,
+                     "marks_obtained": lowest.marks_obtained, "max_marks": lowest.max_marks},
+        )
+    average = m.average_assessment
+    return _RuleObservation(
+        triggered=compare(average, rule.operator, rule.threshold_value),
+        value=average,
+        display=f"{average:.1f}% CIA Average",
+        context={"subject_name": "All Subjects CIA Average", "assessment_name": "Internal Evaluations Average",
+                 "marks_obtained": average, "max_marks": 100.0},
+    )
+
+
+def _observe_sgpa_drop(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservation:
+    prev, curr = m.previous_semester, m.current_semester
+    return _RuleObservation(
+        triggered=m.sgpa_drop > 0.0 and compare(m.sgpa_drop, rule.operator, rule.threshold_value),
+        value=m.sgpa_drop,
+        display=f"Δ -{m.sgpa_drop:.2f} SGPA",
+        context={"prev_sgpa": prev.sgpa if prev else 0.0,
+                 "curr_sgpa": curr.sgpa if curr else 0.0,
+                 "prev_sem": f"Semester {prev.semester_number}" if prev else "Previous",
+                 "curr_sem": f"Semester {curr.semester_number}" if curr else m.current_period},
+    )
+
+
+def _observe_backlogs(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservation:
+    value = float(m.backlog_count)
+    return _RuleObservation(
+        triggered=m.backlog_count > 0 and compare(value, rule.operator, rule.threshold_value),
+        value=value,
+        display=f"{m.backlog_count} Active Backlog(s)",
+        context={"failed_subjects": m.failed_subject_names},
+    )
+
+
+def _observe_missing_assessments(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservation:
+    """An enrolled student with no recorded assessments counts as one missing evaluation."""
+    missing = 1 if not m.assessments and (m.attendance_records or m.student.current_semester >= 1) else 0
+    return _RuleObservation(
+        triggered=compare(float(missing), rule.operator, rule.threshold_value),
+        value=float(missing),
+        display=f"{missing} Missing Evaluation(s)",
+        context={"subject_name": "Enrolled Curriculum"},
+    )
+
+
+def _observe_composite(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservation:
+    """Low attendance AND a low assessment average together (limits from the rule's conditions_config)."""
+    config = rule.conditions_config or {}
+    low_attendance = m.overall_attendance < float(config.get("min_attendance", 75.0))
+    low_assessments = m.average_assessment < float(config.get("max_assessment_pct", 50.0)) and len(m.assessments) > 0
+    if not (low_attendance and low_assessments):
+        return _RuleObservation()
+    return _RuleObservation(
+        triggered=True,
+        value=1.0,
+        display=f"Att: {m.overall_attendance:.1f}%, CIA: {m.average_assessment:.1f}%",
+        context={"attendance_val": m.overall_attendance, "cia_val": m.average_assessment},
+    )
+
+
+# RiskRule.indicator_type -> how that indicator is observed for one student.
+_INDICATOR_OBSERVERS = {
+    "attendance_percentage": _observe_attendance,
+    "assessment_percentage": _observe_assessments,
+    "sgpa_drop": _observe_sgpa_drop,
+    "backlog_count": _observe_backlogs,
+    "missing_assessments": _observe_missing_assessments,
+    "composite": _observe_composite,
+}

@@ -1,50 +1,51 @@
-from datetime import datetime, timezone
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_active_user
+from app.core.access import own_student_record
 from app.core.database import get_db
-from app.api.deps import get_current_active_user, require_role
-from app.models.user import User, UserRole
 from app.models.profile import Student
 from app.models.student_intelligence import Skill
-from app.models.placement import (
-    CareerRole,
-    RoleSkill,
-    PlacementOpportunity,
-    OpportunityRequirement,
-    StudentApplication,
-    SkillEvidence,
-)
+from app.models.user import User, UserRole
 from app.schemas.placement import (
-    SkillResponse,
-    SkillCreate,
-    SkillEvidenceCreate,
-    SkillEvidenceVerify,
-    SkillEvidenceResponse,
-    StudentSkillDetailResponse,
-    StudentSkillCreateOrUpdate,
     CareerRoleCreate,
-    CareerRoleUpdate,
     CareerRoleResponse,
-    RoleSkillResponse,
-    PlacementReadinessResponse,
+    OpportunityMatchForStudent,
     PlacementOpportunityCreate,
     PlacementOpportunityResponse,
-    OpportunityMatchForStudent,
+    PlacementReadinessResponse,
+    SkillCreate,
+    SkillEvidenceCreate,
+    SkillEvidenceResponse,
+    SkillEvidenceVerify,
+    SkillResponse,
     StudentApplicationCreate,
-    StudentApplicationStatusUpdate,
     StudentApplicationResponse,
+    StudentApplicationStatusUpdate,
+    StudentSkillCreateOrUpdate,
+    StudentSkillDetailResponse,
 )
-from app.services.placement_service import PlacementService
+from app.services.placement_service import (
+    PlacementService,
+    application_to_response,
+    career_role_to_response,
+    default_role_code_for_student,
+    opportunity_to_response,
+)
 
 router = APIRouter(prefix="/placement", tags=["Skill Gap & Placement Readiness"])
+
+PLACEMENT_MANAGERS = {UserRole.ADMIN.value, UserRole.PLACEMENT_OFFICER.value}
+CATALOGUE_EDITORS = PLACEMENT_MANAGERS | {UserRole.FACULTY.value}
+EVIDENCE_VERIFIERS = CATALOGUE_EDITORS | {UserRole.MENTOR.value}
 
 
 def verify_student_access(student_id: int, current_user: User, db: Session):
     """Ensure students can only access their own profile; faculty/admins/placement officers have institutional access."""
-    if current_user.role in [UserRole.STUDENT.value, "student"]:
-        student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if current_user.role == UserRole.STUDENT.value:
+        student = own_student_record(db, current_user)
         if not student or student.id != student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -73,7 +74,7 @@ def create_skill(
     current_user: User = Depends(get_current_active_user)
 ):
     """Add a new skill to the institutional catalogue (Admin or Placement Officer)."""
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.PLACEMENT_OFFICER.value, UserRole.FACULTY.value, "admin", "placement_officer", "faculty"]:
+    if current_user.role not in CATALOGUE_EDITORS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized to add catalogue skills.")
     return PlacementService.get_or_create_skill(db, skill_in.name, skill_in.category, skill_in.description)
 
@@ -139,7 +140,7 @@ def verify_skill_evidence(
     current_user: User = Depends(get_current_active_user)
 ):
     """Faculty, Admins, or Placement Officers verify or reject student skill evidence."""
-    if current_user.role not in [UserRole.FACULTY.value, UserRole.MENTOR.value, UserRole.ADMIN.value, UserRole.PLACEMENT_OFFICER.value, "faculty", "mentor", "admin", "placement_officer"]:
+    if current_user.role not in EVIDENCE_VERIFIERS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only faculty and placement officers can verify skill evidence.")
     try:
         return PlacementService.verify_skill_evidence(
@@ -150,7 +151,7 @@ def verify_skill_evidence(
             feedback=payload.verification_feedback
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 # --- 3. Career Role Catalogue ---
@@ -164,37 +165,8 @@ def get_career_roles(
     roles = PlacementService.get_career_roles(db, is_active)
     if not roles:
         roles = PlacementService.seed_canonical_career_roles(db)
-    
-    results = []
-    for r in roles:
-        skills_res = []
-        for rs in r.role_skills:
-            skills_res.append(RoleSkillResponse(
-                id=rs.id,
-                role_id=rs.role_id,
-                skill_id=rs.skill_id,
-                skill_name=rs.skill.name if rs.skill else "",
-                category=rs.skill.category if rs.skill else "programming",
-                min_proficiency=rs.min_proficiency,
-                importance=rs.importance,
-                importance_weight=rs.importance_weight,
-                is_mandatory=rs.is_mandatory,
-            ))
-        results.append(CareerRoleResponse(
-            id=r.id,
-            code=r.code,
-            title=r.title,
-            department_id=r.department_id,
-            department_code=r.department.code if r.department else None,
-            description=r.description,
-            min_experience_level=r.min_experience_level,
-            average_salary_range=r.average_salary_range,
-            industry_demand=r.industry_demand,
-            is_active=r.is_active,
-            skills=skills_res,
-            created_at=r.created_at,
-        ))
-    return results
+
+    return [career_role_to_response(r) for r in roles]
 
 
 @router.post("/roles", response_model=CareerRoleResponse)
@@ -204,41 +176,14 @@ def create_career_role(
     current_user: User = Depends(get_current_active_user)
 ):
     """Placement Officers and Admins configure a new career role with skill benchmarks."""
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.PLACEMENT_OFFICER.value, "admin", "placement_officer"]:
+    if current_user.role not in PLACEMENT_MANAGERS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only placement officers and administrators can configure career roles.")
-    
-    existing = db.query(CareerRole).filter(CareerRole.code == payload.code.upper()).first()
-    if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Career role code '{payload.code}' already exists.")
 
-    role = CareerRole(
-        code=payload.code.upper(),
-        title=payload.title,
-        department_id=payload.department_id,
-        description=payload.description,
-        min_experience_level=payload.min_experience_level,
-        average_salary_range=payload.average_salary_range,
-        industry_demand=payload.industry_demand,
-        is_active=payload.is_active,
-    )
-    db.add(role)
-    db.commit()
-    db.refresh(role)
-
-    for item in payload.required_skills:
-        skill = PlacementService.get_or_create_skill(db, item.skill_name, item.category or "programming")
-        rs = RoleSkill(
-            role_id=role.id,
-            skill_id=skill.id,
-            min_proficiency=item.min_proficiency,
-            importance=item.importance,
-            importance_weight=item.importance_weight,
-            is_mandatory=item.is_mandatory,
-        )
-        db.add(rs)
-    db.commit()
-
-    return PlacementService.get_career_role_by_id_or_code(db, role.id)
+    try:
+        role = PlacementService.create_career_role(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    return career_role_to_response(role)
 
 
 # --- 4. Skill Gap & Placement Readiness Engine ---
@@ -255,66 +200,28 @@ def get_student_placement_readiness(
     """
     verify_student_access(student_id, current_user, db)
     try:
-        # If no role specified, try student's declared first career goal or default
         if not role:
-            student = db.query(Student).filter(Student.id == student_id).first()
-            if student and student.career_goals and len(student.career_goals) > 0:
-                first_goal = student.career_goals[0].replace(" ", "_").upper()
-                role = first_goal
-            else:
-                role = "SOFTWARE_DEVELOPER"
+            role = default_role_code_for_student(db.query(Student).filter(Student.id == student_id).first())
         return PlacementService.calculate_placement_readiness(db, student_id, role)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 # --- 5. Placement Opportunities ---
 @router.get("/opportunities", response_model=List[PlacementOpportunityResponse])
 def get_opportunities(
     opportunity_type: Optional[str] = None,
-    status: Optional[str] = None,
+    status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List job and internship opportunities with eligibility criteria."""
-    opps = PlacementService.list_opportunities(db, opportunity_type, status, search)
+    opps = PlacementService.list_opportunities(db, opportunity_type, status_filter, search)
     if not opps:
         opps = PlacementService.seed_canonical_opportunities(db)
-    
-    results = []
-    for o in opps:
-        req_list = []
-        for r in o.requirements:
-            req_list.append({
-                "skill_name": r.skill.name if r.skill else "",
-                "min_proficiency": r.min_proficiency,
-                "is_mandatory": r.is_mandatory,
-            })
-        results.append(PlacementOpportunityResponse(
-            id=o.id,
-            company_name=o.company_name,
-            title=o.title,
-            opportunity_type=o.opportunity_type,
-            role_id=o.role_id,
-            role_title=o.role.title if o.role else None,
-            location=o.location,
-            work_mode=o.work_mode,
-            ctc_stipend=o.ctc_stipend,
-            min_cgpa=o.min_cgpa,
-            max_backlogs=o.max_backlogs,
-            min_attendance=o.min_attendance,
-            eligible_departments=o.eligible_departments,
-            eligible_semesters=o.eligible_semesters,
-            application_deadline=o.application_deadline,
-            open_positions=o.open_positions,
-            description=o.description,
-            status=o.status,
-            requirements=req_list,
-            application_count=len(o.applications),
-            created_at=o.created_at,
-        ))
-    return results
+
+    return [opportunity_to_response(o) for o in opps]
 
 
 @router.post("/opportunities", response_model=PlacementOpportunityResponse)
@@ -324,44 +231,10 @@ def create_placement_opportunity(
     current_user: User = Depends(get_current_active_user)
 ):
     """Placement Officer creates a corporate recruitment drive or internship."""
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.PLACEMENT_OFFICER.value, "admin", "placement_officer"]:
+    if current_user.role not in PLACEMENT_MANAGERS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only placement officers can post opportunities.")
-    
-    opp = PlacementOpportunity(
-        company_name=payload.company_name,
-        title=payload.title,
-        opportunity_type=payload.opportunity_type,
-        role_id=payload.role_id,
-        location=payload.location,
-        work_mode=payload.work_mode,
-        ctc_stipend=payload.ctc_stipend,
-        min_cgpa=payload.min_cgpa,
-        max_backlogs=payload.max_backlogs,
-        min_attendance=payload.min_attendance,
-        eligible_departments=payload.eligible_departments,
-        eligible_semesters=payload.eligible_semesters,
-        application_deadline=payload.application_deadline,
-        open_positions=payload.open_positions,
-        description=payload.description,
-        status=payload.status,
-        created_by_user_id=current_user.id,
-    )
-    db.add(opp)
-    db.commit()
-    db.refresh(opp)
 
-    for req_in in payload.requirements:
-        skill = PlacementService.get_or_create_skill(db, req_in.skill_name)
-        req = OpportunityRequirement(
-            opportunity_id=opp.id,
-            skill_id=skill.id,
-            min_proficiency=req_in.min_proficiency,
-            is_mandatory=req_in.is_mandatory,
-        )
-        db.add(req)
-    db.commit()
-
-    return opp
+    return opportunity_to_response(PlacementService.create_opportunity(db, payload, current_user.id))
 
 
 @router.get("/students/{student_id}/matching-opportunities", response_model=List[OpportunityMatchForStudent])
@@ -375,7 +248,7 @@ def get_student_matching_opportunities(
     try:
         return PlacementService.get_matching_opportunities_for_student(db, student_id)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 # --- 6. Applications Tracking ---
@@ -386,10 +259,10 @@ def submit_student_application(
     current_user: User = Depends(get_current_active_user)
 ):
     """Student submits an application to an eligible placement or internship opportunity."""
-    student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    student = own_student_record(db, current_user)
     if not student:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only registered students can apply for opportunities.")
-    
+
     try:
         app = PlacementService.apply_to_opportunity(
             db,
@@ -398,28 +271,9 @@ def submit_student_application(
             resume_url=payload.resume_url,
             cover_notes=payload.cover_notes,
         )
-        user_name = student.user.full_name if (student.user and student.user.full_name) else "Student"
-        return StudentApplicationResponse(
-            id=app.id,
-            opportunity_id=app.opportunity_id,
-            opportunity_title=app.opportunity.title if app.opportunity else "",
-            company_name=app.opportunity.company_name if app.opportunity else "",
-            opportunity_type=app.opportunity.opportunity_type if app.opportunity else "JOB",
-            ctc_stipend=app.opportunity.ctc_stipend if app.opportunity else "",
-            location=app.opportunity.location if app.opportunity else "",
-            deadline=app.opportunity.application_deadline if app.opportunity else datetime.now(timezone.utc).date(),
-            student_id=student.id,
-            student_name=user_name,
-            student_srn=student.srn or student.usn,
-            status=app.status,
-            applied_at=app.applied_at,
-            resume_url=app.resume_url,
-            cover_notes=app.cover_notes,
-            reviewer_notes=app.reviewer_notes,
-            readiness_score_at_application=app.readiness_score_at_application,
-        )
+        return application_to_response(app)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 @router.get("/applications", response_model=List[StudentApplicationResponse])
@@ -433,42 +287,14 @@ def list_student_applications(
     List applications. Students only see their own applications;
     Placement Officers and Admins see all across the institution.
     """
-    q = db.query(StudentApplication)
-    if current_user.role in [UserRole.STUDENT.value, "student"]:
-        student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if current_user.role == UserRole.STUDENT.value:  # students see only their own applications
+        student = own_student_record(db, current_user)
         if not student:
             return []
-        q = q.filter(StudentApplication.student_id == student.id)
+        apps = PlacementService.list_applications(db, student_id=student.id)
     else:
-        if student_id:
-            q = q.filter(StudentApplication.student_id == student_id)
-        if opportunity_id:
-            q = q.filter(StudentApplication.opportunity_id == opportunity_id)
-
-    apps = q.order_by(StudentApplication.applied_at.desc()).all()
-    results = []
-    for a in apps:
-        st_name = a.student.user.full_name if (a.student and a.student.user and a.student.user.full_name) else "Student"
-        results.append(StudentApplicationResponse(
-            id=a.id,
-            opportunity_id=a.opportunity_id,
-            opportunity_title=a.opportunity.title if a.opportunity else "",
-            company_name=a.opportunity.company_name if a.opportunity else "",
-            opportunity_type=a.opportunity.opportunity_type if a.opportunity else "JOB",
-            ctc_stipend=a.opportunity.ctc_stipend if a.opportunity else "",
-            location=a.opportunity.location if a.opportunity else "",
-            deadline=a.opportunity.application_deadline if a.opportunity else datetime.now(timezone.utc).date(),
-            student_id=a.student_id,
-            student_name=st_name,
-            student_srn=a.student.srn or a.student.usn if a.student else None,
-            status=a.status,
-            applied_at=a.applied_at,
-            resume_url=a.resume_url,
-            cover_notes=a.cover_notes,
-            reviewer_notes=a.reviewer_notes,
-            readiness_score_at_application=a.readiness_score_at_application,
-        ))
-    return results
+        apps = PlacementService.list_applications(db, student_id=student_id, opportunity_id=opportunity_id)
+    return [application_to_response(a) for a in apps]
 
 
 @router.put("/applications/{application_id}/status", response_model=StudentApplicationResponse)
@@ -479,29 +305,10 @@ def update_application_status(
     current_user: User = Depends(get_current_active_user)
 ):
     """Placement Officer updates application status (SHORTLISTED, INTERVIEW_SCHEDULED, OFFERED, REJECTED)."""
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.PLACEMENT_OFFICER.value, "admin", "placement_officer"]:
+    if current_user.role not in PLACEMENT_MANAGERS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only placement officers can update application statuses.")
     try:
         app = PlacementService.update_application_status(db, application_id, payload.status, payload.reviewer_notes)
-        st_name = app.student.user.full_name if (app.student and app.student.user and app.student.user.full_name) else "Student"
-        return StudentApplicationResponse(
-            id=app.id,
-            opportunity_id=app.opportunity_id,
-            opportunity_title=app.opportunity.title if app.opportunity else "",
-            company_name=app.opportunity.company_name if app.opportunity else "",
-            opportunity_type=app.opportunity.opportunity_type if app.opportunity else "JOB",
-            ctc_stipend=app.opportunity.ctc_stipend if app.opportunity else "",
-            location=app.opportunity.location if app.opportunity else "",
-            deadline=app.opportunity.application_deadline if app.opportunity else datetime.now(timezone.utc).date(),
-            student_id=app.student_id,
-            student_name=st_name,
-            student_srn=app.student.srn or app.student.usn if app.student else None,
-            status=app.status,
-            applied_at=app.applied_at,
-            resume_url=app.resume_url,
-            cover_notes=app.cover_notes,
-            reviewer_notes=app.reviewer_notes,
-            readiness_score_at_application=app.readiness_score_at_application,
-        )
+        return application_to_response(app)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

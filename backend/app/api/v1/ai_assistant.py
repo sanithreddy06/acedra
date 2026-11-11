@@ -1,46 +1,48 @@
-from typing import List, Optional
 import json
+from typing import List, Optional
+
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
-    status,
-    UploadFile,
     File,
     Form,
+    HTTPException,
     Query,
-    Request,
+    UploadFile,
+    status,
 )
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.api.deps import (
     get_current_active_user,
-    get_optional_current_user,
     require_role,
 )
-from app.models.user import User
+from app.core.config import settings
+from app.core.database import get_db
 from app.models.ai_assistant import (
-    Document,
-    DocumentCategory,
-    DocumentAccessPermission,
     AssistantMode,
+    Conversation,
+    Document,
+    DocumentAccessPermission,
+    DocumentCategory,
 )
+from app.models.user import User
 from app.schemas.ai_assistant import (
-    DocumentResponse,
-    DocumentDetailResponse,
-    DocumentCreate,
-    ConversationResponse,
-    ConversationDetailResponse,
     ConversationCreate,
-    MessageCreate,
-    MessageResponse,
+    ConversationDetailResponse,
     ConversationFeedbackCreate,
     ConversationFeedbackResponse,
+    ConversationResponse,
+    DocumentCreate,
+    DocumentDetailResponse,
+    DocumentResponse,
+    MessageCreate,
+    MessageResponse,
     SuggestedQuestion,
 )
 from app.services.ai_assistant_service import AIAssistantService
+from app.services.embedding_service import EmbeddingService
 from app.services.llm_service import LLMService
 
 router = APIRouter(prefix="/ai", tags=["Conversational AI Assistant & RAG"])
@@ -49,6 +51,19 @@ router = APIRouter(prefix="/ai", tags=["Conversational AI Assistant & RAG"])
 # =============================================================================
 # 1. Suggested Exploration Questions
 # =============================================================================
+
+@router.get("/status")
+def assistant_status(current_user: User = Depends(get_current_active_user)):
+    """Tell the interface exactly what is powering the assistant, so it can label answers honestly."""
+    return {
+        "llm_provider": settings.LLM_PROVIDER,
+        "llm_model": settings.LLM_MODEL if settings.LLM_PROVIDER != "none" else None,
+        "llm_configured": settings.LLM_PROVIDER != "none",
+        "retrieval": EmbeddingService.provider_label(),
+        "semantic_retrieval": settings.EMBEDDING_PROVIDER != "lexical",
+        "personal_mode_available": True,
+    }
+
 
 @router.get("/suggested-questions", response_model=List[SuggestedQuestion])
 def get_suggested_questions(
@@ -65,18 +80,15 @@ def get_suggested_questions(
 @router.post("/conversations", response_model=ConversationResponse)
 def create_conversation(
     payload: ConversationCreate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Start or join a conversation session.
     Mode A is public. Mode B requires an authenticated user.
     """
-    if payload.mode == AssistantMode.PERSONAL_MODE_B.value and not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required for Mode B (Personal Student Assistant).",
-        )
+    if payload.mode not in (AssistantMode.PUBLIC_MODE_A.value, AssistantMode.PERSONAL_MODE_B.value):
+        raise HTTPException(status_code=422, detail="Unknown assistant mode")
 
     conv = AIAssistantService.get_or_create_conversation(
         db=db,
@@ -90,41 +102,34 @@ def create_conversation(
 
 @router.get("/conversations", response_model=List[ConversationResponse])
 def list_conversations(
-    session_id: Optional[str] = Query(None, description="Client session ID for anonymous users"),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """List recent conversations belonging to the user or session."""
     return AIAssistantService.list_user_conversations(
         db=db,
         user=current_user,
-        session_id=session_id,
     )
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
 def get_conversation_details(
     conversation_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Retrieve conversation messages and citations."""
-    conv = db.query(AIAssistantService.get_or_create_conversation.__globals__["Conversation"]).filter_by(id=conversation_id).first()
-    if not conv:
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id,
+                                         Conversation.user_id == current_user.id).first()
+    if not conv:  # other users' conversations are indistinguishable from missing ones
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-    # Access control
-    if conv.mode == AssistantMode.PERSONAL_MODE_B.value:
-        if not current_user or (conv.user_id and conv.user_id != current_user.id and current_user.role != "admin"):
-            raise HTTPException(status_code=403, detail="Unauthorized to view this personal conversation")
-
     return conv
 
 
 @router.delete("/conversations/{conversation_id}")
 def delete_conversation(
     conversation_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Delete a conversation history."""
@@ -140,7 +145,7 @@ def delete_conversation(
 def send_message(
     conversation_id: int,
     payload: MessageCreate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -161,7 +166,7 @@ def send_message(
 def stream_message(
     conversation_id: int,
     payload: MessageCreate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -206,7 +211,7 @@ def stream_message(
 def submit_message_feedback(
     message_id: int,
     payload: ConversationFeedbackCreate,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Record user satisfaction feedback (Helpful / Unhelpful) for a message."""
@@ -227,20 +232,24 @@ def submit_message_feedback(
 def list_documents(
     category: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """List indexed RAG documents with category and keyword filtering."""
-    return AIAssistantService.list_documents(db=db, category=category, search=search)
+    """List university documents the caller's role may read."""
+    docs = AIAssistantService.list_documents(db=db, category=category, search=search, limit=200)
+    allowed = AIAssistantService.allowed_permissions(current_user.role)
+    return [d for d in docs if d.access_permission in allowed]
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetailResponse)
 def get_document_details(
     document_id: int,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """View full document details including its indexed text chunks."""
+    """View document details including its indexed text chunks (permission-checked)."""
     doc = db.query(Document).filter(Document.id == document_id).first()
-    if not doc:
+    if not doc or doc.access_permission not in AIAssistantService.allowed_permissions(current_user.role):
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
 
@@ -271,11 +280,22 @@ async def upload_document(
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-    if len(file_bytes) > 15 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Document exceeds maximum permitted file size of 15MB.",
-        )
+    if len(file_bytes) > settings.MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Document exceeds the {settings.MAX_UPLOAD_MB} MB limit.")
+    # Verify content matches the declared type (magic bytes) — never trust the filename alone.
+    if ext == "pdf" and not file_bytes.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="File content is not a valid PDF.")
+    if ext == "docx" and not file_bytes.startswith(b"PK"):
+        raise HTTPException(status_code=400, detail="File content is not a valid DOCX document.")
+    if ext in ("txt", "md"):
+        try:
+            file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="Text documents must be UTF-8 encoded.") from None
+    if category not in {c.value for c in DocumentCategory}:
+        raise HTTPException(status_code=422, detail="Unknown document category")
+    if access_permission not in {p.value for p in DocumentAccessPermission}:
+        raise HTTPException(status_code=422, detail="Unknown access level")
 
     return AIAssistantService.process_and_index_document(
         db=db,
@@ -336,11 +356,11 @@ def delete_document(
 def test_rag_search(
     q: str = Query(..., description="Query string to search in RAG knowledge base"),
     top_k: int = Query(4, ge=1, le=10),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Directly test vector semantic retrieval and view relevance scores and chunks."""
-    user_role = current_user.role if current_user else "public"
+    user_role = current_user.role
     passages = AIAssistantService.search_relevant_passages(
         db=db,
         query=q,

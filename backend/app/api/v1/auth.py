@@ -1,118 +1,136 @@
-from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import Any, Dict
+
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
+
+from app.api.deps import get_client_ip, get_current_active_user
+from app.core.config import settings
 from app.core.database import get_db
-from app.api.deps import get_current_active_user, get_client_ip
+from app.core.ratelimit import limiter
+from app.core.tenancy import unscoped
+from app.models.legal import LegalAcceptance
 from app.models.user import User
-from app.schemas.auth import LoginRequest, Token, RefreshTokenRequest
-from app.schemas.user import PasswordResetRequest, PasswordResetConfirm
+from app.schemas.auth import LoginRequest, RefreshTokenRequest, Token
+from app.schemas.legal import LegalAcceptanceIn, LegalStatusOut
+from app.services import legal_service
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(..., min_length=10, max_length=200)
+    new_password: str = Field(..., max_length=128)
+
+
+class AcceptInvitation(BaseModel):
+    token: str = Field(..., min_length=10, max_length=200)
+    password: str = Field(..., max_length=128)
+    # Document type -> version of the Terms and Privacy Policy the person reviewed and accepted.
+    accepted_versions: Dict[str, str]
+
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str = Field(..., max_length=128)
+
+
 @router.post("/login", response_model=Token)
-def login_json(
-    credentials: LoginRequest,
-    request: Request,
-    db: Session = Depends(get_db)
-) -> Any:
-    """Login with JSON payload containing email and password."""
-    ip = get_client_ip(request)
-    ua = request.headers.get("User-Agent")
-    auth_service = AuthService(db)
-    user = auth_service.authenticate_user(
-        email=credentials.email,
-        password=credentials.password,
-        ip_address=ip,
-        user_agent=ua
-    )
-    return auth_service.generate_tokens(user)
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def login_json(credentials: LoginRequest, request: Request, db: Session = Depends(get_db)) -> Any:
+    svc = AuthService(db)
+    user = svc.authenticate_user(credentials.email, credentials.password, get_client_ip(request),
+                                 request.headers.get("User-Agent"))
+    return svc.generate_tokens(user)
 
 
 @router.post("/token", response_model=Token, include_in_schema=False)
-def login_form(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    request: Request = None,
-    db: Session = Depends(get_db)
-) -> Any:
-    """OAuth2 compatible token login for Swagger UI."""
-    ip = get_client_ip(request) if request else "unknown"
-    ua = request.headers.get("User-Agent") if request else "swagger"
-    auth_service = AuthService(db)
-    user = auth_service.authenticate_user(
-        email=form_data.username,
-        password=form_data.password,
-        ip_address=ip,
-        user_agent=ua
-    )
-    return auth_service.generate_tokens(user)
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)) -> Any:
+    svc = AuthService(db)
+    user = svc.authenticate_user(form_data.username, form_data.password, get_client_ip(request), "swagger")
+    return svc.generate_tokens(user)
 
 
 @router.post("/refresh", response_model=Token)
-def refresh_token(
-    payload: RefreshTokenRequest,
-    db: Session = Depends(get_db)
-) -> Any:
-    """Obtain a new access token using a valid refresh token."""
-    auth_service = AuthService(db)
-    return auth_service.refresh_access_token(payload.refresh_token)
+def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)) -> Any:
+    return AuthService(db).refresh_access_token(payload.refresh_token)
 
 
 @router.get("/me")
-def get_current_user_profile(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-) -> Any:
-    """Retrieve full profile details of the currently authenticated user."""
-    auth_service = AuthService(db)
-    return auth_service.generate_tokens(current_user)["user"]
+def me(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)) -> Any:
+    return AuthService(db).build_user_info(current_user)
 
 
 @router.post("/logout")
-def logout(
-    current_user: User = Depends(get_current_active_user),
-    request: Request = None,
-    db: Session = Depends(get_db)
-) -> Any:
-    """Invalidate session / register audit event for logout."""
-    auth_service = AuthService(db)
-    ip = get_client_ip(request) if request else None
-    auth_service.audit_repo.log(
-        action="LOGOUT",
-        user_id=current_user.id,
-        resource_type="auth",
-        ip_address=ip,
-        details={"email": current_user.email}
-    )
-    return {"message": "Logged out successfully"}
+def logout(request: Request, current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)) -> Any:
+    svc = AuthService(db)
+    svc.logout(current_user, get_client_ip(request))
+    db.commit()
+    return {"message": "Signed out. All active sessions for this account have ended."}
+
+
+@router.get("/invitations/{token}")
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def describe_invitation(token: str, request: Request, db: Session = Depends(get_db)) -> Any:
+    return AuthService(db).describe_invitation(token)
+
+
+@router.post("/invitations/accept", response_model=Token)
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def accept_invitation(body: AcceptInvitation, request: Request, db: Session = Depends(get_db)) -> Any:
+    svc = AuthService(db)
+    invitation = svc.get_invitation(body.token)
+    legal_service.record_acceptance(db, invitation.user, body.accepted_versions, context="invitation", commit=False)
+    result = svc.accept_invitation(body.token, body.password, get_client_ip(request))
+    db.commit()
+    return result
+
+
+@router.get("/legal-status", response_model=LegalStatusOut)
+def legal_status(current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)) -> Any:
+    """Which current legal documents this person still needs to accept, and what they have accepted."""
+    with unscoped(db):
+        accepted = db.query(LegalAcceptance).filter(LegalAcceptance.user_id == current_user.id) \
+            .order_by(LegalAcceptance.accepted_at.desc()).all()
+        history = [{"doc_type": a.doc_type, "version": a.version, "accepted_at": a.accepted_at.isoformat()}
+                   for a in accepted]
+    return {"pending": legal_service.pending_documents(db, current_user), "accepted": history}
+
+
+@router.post("/legal-acceptances", response_model=LegalStatusOut)
+def accept_legal_documents(body: LegalAcceptanceIn, current_user: User = Depends(get_current_active_user),
+                           db: Session = Depends(get_db)) -> Any:
+    """Record that the signed-in person accepted the current Terms and Privacy Policy."""
+    legal_service.record_acceptance(db, current_user, body.accepted_versions, context="sign_in")
+    return legal_status(current_user, db)
 
 
 @router.post("/password-reset-request")
-def request_password_reset(
-    body: PasswordResetRequest,
-    request: Request,
-    db: Session = Depends(get_db)
-) -> Any:
-    """Request a password reset link/token."""
-    ip = get_client_ip(request)
-    auth_service = AuthService(db)
-    token = auth_service.request_password_reset(body.email, ip_address=ip)
-    return {
-        "message": "If the account exists, instructions have been generated.",
-        "reset_token": token if "reset:" in token else None
-    }
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def request_password_reset(body: PasswordResetRequest, request: Request, db: Session = Depends(get_db)) -> Any:
+    AuthService(db).request_password_reset(body.email, get_client_ip(request))
+    db.commit()
+    return {"message": "If an active account exists for that email, a reset link has been sent."}
 
 
 @router.post("/password-reset-confirm")
-def confirm_password_reset(
-    body: PasswordResetConfirm,
-    request: Request,
-    db: Session = Depends(get_db)
-) -> Any:
-    """Set new password using a valid reset token."""
-    ip = get_client_ip(request)
-    auth_service = AuthService(db)
-    auth_service.confirm_password_reset(body.token, body.new_password, ip_address=ip)
-    return {"message": "Password has been successfully updated. You may now login."}
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+def confirm_password_reset(body: PasswordResetConfirm, request: Request, db: Session = Depends(get_db)) -> Any:
+    AuthService(db).confirm_password_reset(body.token, body.new_password, get_client_ip(request))
+    db.commit()
+    return {"message": "Your password has been updated. You can now sign in."}
+
+
+@router.post("/change-password")
+def change_password(body: ChangePassword, current_user: User = Depends(get_current_active_user),
+                    db: Session = Depends(get_db)) -> Any:
+    AuthService(db).change_password(current_user, body.old_password, body.new_password)
+    db.commit()
+    return {"message": "Password changed. Please sign in again."}

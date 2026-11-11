@@ -1,26 +1,37 @@
-import logging
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc
+"""Personalised recommendations (module 3).
 
-from app.models.recommendation import (
-    RecommendationCatalogue,
-    RecommendationResource,
-    Recommendation,
-    RecommendationProgress,
-    RecommendationFeedback,
-)
-from app.models.profile import Student, Faculty, Mentor
+Recommendations are drawn only from the university's approved catalogue and always state the evidence
+behind them (reason, gap, expected outcome). The generation rules are documented on
+``RecommendationService.generate_recommendations_for_student``; ``recommendation_to_out`` is the single
+serialiser used by every endpoint.
+"""
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session, joinedload
+
+from app.core.access import own_student_record
+from app.core.clock import utcnow
 from app.models.academic import (
-    SubjectResult,
-    SubjectAttendance,
     StudentAssessment,
-    StudentSemesterRecord,
-    Subject,
+    SubjectResult,
 )
-from app.models.student_intelligence import StudentSkill, Certification, Project, Skill
-from app.models.user import User
+from app.models.profile import Student
+from app.models.recommendation import (
+    Recommendation,
+    RecommendationCatalogue,
+    RecommendationFeedback,
+    RecommendationProgress,
+    RecommendationResource,
+)
+from app.models.student_intelligence import StudentSkill
+from app.models.user import User, UserRole
+from app.schemas.recommendation import (
+    RecommendationFeedbackOut,
+    RecommendationOut,
+    RecommendationProgressOut,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +66,85 @@ CAREER_GOAL_REQUIREMENTS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def recommendations_in_display_order(db: Session):
+    """Query for recommendations with everything an API response needs, ordered critical → high → newest."""
+    return (
+        db.query(Recommendation)
+        .options(
+            joinedload(Recommendation.student).joinedload(Student.user),
+            joinedload(Recommendation.student).joinedload(Student.department),
+            joinedload(Recommendation.catalogue),
+            joinedload(Recommendation.progress_logs),
+            joinedload(Recommendation.feedback),
+            joinedload(Recommendation.created_by),
+        )
+        .order_by(
+            desc(Recommendation.priority == "CRITICAL"),
+            desc(Recommendation.priority == "HIGH"),
+            desc(Recommendation.created_at),
+        )
+    )
+
+
+def recommendation_to_out(rec: Recommendation) -> RecommendationOut:
+    """Serialise a recommendation for the API (explicit fields only; never nested ORM users)."""
+    student = rec.student
+    feedback = rec.feedback
+    return RecommendationOut(
+        id=rec.id,
+        student_id=rec.student_id,
+        student_name=student.user.full_name if student and student.user else None,
+        student_roll=student.roll_number if student else None,
+        student_department=student.department.name if student and student.department else None,
+        catalogue_id=rec.catalogue_id,
+        title=rec.title,
+        category=rec.category,
+        reason=rec.reason,
+        gap_type=rec.gap_type,
+        gap_detail=rec.gap_detail,
+        expected_outcome=rec.expected_outcome,
+        priority=rec.priority,
+        resource_url=rec.resource_url,
+        suggested_completion_time=rec.suggested_completion_time,
+        status=rec.status,
+        source=rec.source,
+        created_by_id=rec.created_by_id,
+        created_by_name=rec.created_by.full_name if rec.created_by else None,
+        mentor_approval_status=rec.mentor_approval_status,
+        mentor_guidance_notes=rec.mentor_guidance_notes,
+        accepted_at=rec.accepted_at,
+        completed_at=rec.completed_at,
+        rejected_at=rec.rejected_at,
+        rejection_reason=rec.rejection_reason,
+        created_at=rec.created_at,
+        progress_logs=[
+            RecommendationProgressOut(
+                id=p.id,
+                recommendation_id=p.recommendation_id,
+                status=p.status,
+                percent_complete=p.percent_complete,
+                notes=p.notes,
+                hours_spent=p.hours_spent,
+                updated_by_id=p.updated_by_id,
+                updated_by_name=p.updated_by.full_name if p.updated_by else None,
+                created_at=p.created_at,
+            )
+            for p in rec.progress_logs
+        ],
+        feedback=RecommendationFeedbackOut(
+            id=feedback.id,
+            recommendation_id=feedback.recommendation_id,
+            student_id=feedback.student_id,
+            rating=feedback.rating,
+            helpful=feedback.helpful,
+            relevance_score=feedback.relevance_score,
+            comments=feedback.comments,
+            outcome_achieved=feedback.outcome_achieved,
+            created_at=feedback.created_at,
+        ) if feedback else None,
+    )
+
+
 class RecommendationService:
     """
     Transparent, Rule-Based Personalized Recommendation Engine.
@@ -78,8 +168,20 @@ class RecommendationService:
             "expected_learning_outcome": "Master complex subqueries, transaction ACID properties, and B-Tree indexing.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Course", "title": "NPTEL DBMS Video Series", "url": "https://nptel.ac.in/courses/106105175", "platform": "NPTEL", "is_free": True},
-                {"resource_type": "Practice", "title": "SQLZoo Interactive Exercises", "url": "https://sqlzoo.net", "platform": "SQLZoo", "is_free": True},
+                {
+                    "resource_type": "Course",
+                    "title": "NPTEL DBMS Video Series",
+                    "url": "https://nptel.ac.in/courses/106105175",
+                    "platform": "NPTEL",
+                    "is_free": True,
+                },
+                {
+                    "resource_type": "Practice",
+                    "title": "SQLZoo Interactive Exercises",
+                    "url": "https://sqlzoo.net",
+                    "platform": "SQLZoo",
+                    "is_free": True,
+                },
             ],
         },
         {
@@ -96,7 +198,13 @@ class RecommendationService:
             "expected_learning_outcome": "Demonstrate protocol debugging using Wireshark and socket client-server architectures.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Course", "title": "Stanford CS144 Networking", "url": "https://cs144.github.io", "platform": "Stanford", "is_free": True},
+                {
+                    "resource_type": "Course",
+                    "title": "Stanford CS144 Networking",
+                    "url": "https://cs144.github.io",
+                    "platform": "Stanford",
+                    "is_free": True,
+                },
             ],
         },
         # 2. Programming Practice
@@ -114,7 +222,13 @@ class RecommendationService:
             "expected_learning_outcome": "Solve medium-level algorithmic challenges within 25 minutes with optimal time complexity.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Practice", "title": "Blind 75 Core Problem Set", "url": "https://leetcode.com/discuss/general-discussion/460599/blind-75-leetcode-questions", "platform": "LeetCode", "is_free": True},
+                {
+                    "resource_type": "Practice",
+                    "title": "Blind 75 Core Problem Set",
+                    "url": "https://leetcode.com/discuss/general-discussion/460599/blind-75-leetcode-questions",
+                    "platform": "LeetCode",
+                    "is_free": True,
+                },
             ],
         },
         # 3. Learning Courses
@@ -128,11 +242,20 @@ class RecommendationService:
             "provider": "University of Helsinki (Full Stack Open)",
             "resource_url": "https://fullstackopen.com/en/",
             "estimated_duration": "8 Weeks",
-            "eligibility_conditions": {"target_skills": ["React", "JavaScript", "TypeScript"], "career_goals": ["Full Stack Developer"]},
+            "eligibility_conditions": {
+                "target_skills": ["React", "JavaScript", "TypeScript"],
+                "career_goals": ["Full Stack Developer"],
+            },
             "expected_learning_outcome": "Architect and deploy end-to-end full stack web applications with automated testing.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Course", "title": "Full Stack Open Official Platform", "url": "https://fullstackopen.com/en/", "platform": "Univ of Helsinki", "is_free": True},
+                {
+                    "resource_type": "Course",
+                    "title": "Full Stack Open Official Platform",
+                    "url": "https://fullstackopen.com/en/",
+                    "platform": "Univ of Helsinki",
+                    "is_free": True,
+                },
             ],
         },
         {
@@ -145,11 +268,20 @@ class RecommendationService:
             "provider": "DeepLearning.AI / Andrew Ng",
             "resource_url": "https://www.coursera.org/specializations/deep-learning",
             "estimated_duration": "6 Weeks",
-            "eligibility_conditions": {"target_skills": ["PyTorch", "Machine Learning", "Python"], "career_goals": ["AI/ML Engineer"]},
+            "eligibility_conditions": {
+                "target_skills": ["PyTorch", "Machine Learning", "Python"],
+                "career_goals": ["AI/ML Engineer"],
+            },
             "expected_learning_outcome": "Train, evaluate, and fine-tune convolutional neural networks and transformer models.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Course", "title": "Deep Learning Specialization", "url": "https://www.deeplearning.ai", "platform": "Coursera", "is_free": False},
+                {
+                    "resource_type": "Course",
+                    "title": "Deep Learning Specialization",
+                    "url": "https://www.deeplearning.ai",
+                    "platform": "Coursera",
+                    "is_free": False,
+                },
             ],
         },
         # 4. Technical Certifications
@@ -163,11 +295,20 @@ class RecommendationService:
             "provider": "Amazon Web Services",
             "resource_url": "https://aws.amazon.com/certification/certified-solutions-architect-associate/",
             "estimated_duration": "8 Weeks",
-            "eligibility_conditions": {"target_skills": ["AWS", "Cloud Computing"], "career_goals": ["Cloud Architect", "Full Stack Developer"]},
+            "eligibility_conditions": {
+                "target_skills": ["AWS", "Cloud Computing"],
+                "career_goals": ["Cloud Architect", "Full Stack Developer"],
+            },
             "expected_learning_outcome": "Attain industry-standard validation of cloud architecture and operational design principles.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Exam", "title": "AWS Official Exam Guide", "url": "https://aws.amazon.com/certification/certified-solutions-architect-associate/", "platform": "AWS", "is_free": False},
+                {
+                    "resource_type": "Exam",
+                    "title": "AWS Official Exam Guide",
+                    "url": "https://aws.amazon.com/certification/certified-solutions-architect-associate/",
+                    "platform": "AWS",
+                    "is_free": False,
+                },
             ],
         },
         # 5. Soft Skills
@@ -179,13 +320,19 @@ class RecommendationService:
             "target_audience": "Semester 5-8 students preparing for campus corporate placement drives",
             "difficulty_level": "Beginner",
             "provider": "Campus Placement Cell",
-            "resource_url": "https://smartcampus.edu/placement/soft-skills",
+            "resource_url": "https://resources.example.org/placement/soft-skills",
             "estimated_duration": "2 Weeks",
             "eligibility_conditions": {"min_semester": 5},
             "expected_learning_outcome": "Deliver concise 3-minute project walkthroughs and structured behavioral interview responses.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Video", "title": "Engineering Behavioral Interview Masterclass", "url": "https://smartcampus.edu/placement/star-framework", "platform": "Internal", "is_free": True},
+                {
+                    "resource_type": "Video",
+                    "title": "Engineering Behavioral Interview Masterclass",
+                    "url": "https://resources.example.org/placement/star-framework",
+                    "platform": "Internal",
+                    "is_free": True,
+                },
             ],
         },
         # 6. Project Suggestions
@@ -197,13 +344,19 @@ class RecommendationService:
             "target_audience": "ECE and Mechanical students with IoT or embedded systems interests",
             "difficulty_level": "Intermediate",
             "provider": "Internal Capstone Repository",
-            "resource_url": "https://github.com/smartcampus/iot-gateway-starter",
+            "resource_url": "https://github.com/example-org/iot-gateway-starter",
             "estimated_duration": "5 Weeks",
             "eligibility_conditions": {"interests": ["IoT", "Embedded Systems", "Robotics"]},
             "expected_learning_outcome": "Build a production-grade IoT sensor ingestion node with local SQLite buffering.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Template", "title": "IoT MQTT Starter Repository", "url": "https://github.com/smartcampus/iot-gateway-starter", "platform": "GitHub", "is_free": True},
+                {
+                    "resource_type": "Template",
+                    "title": "IoT MQTT Starter Repository",
+                    "url": "https://github.com/example-org/iot-gateway-starter",
+                    "platform": "GitHub",
+                    "is_free": True,
+                },
             ],
         },
         # 7. Internship & Placement Preparation
@@ -215,13 +368,19 @@ class RecommendationService:
             "target_audience": "Pre-final and final year students appearing for top-tier recruitment drives",
             "difficulty_level": "Intermediate",
             "provider": "Campus Career Development Center",
-            "resource_url": "https://smartcampus.edu/placement/os-prep",
+            "resource_url": "https://resources.example.org/placement/os-prep",
             "estimated_duration": "4 Weeks",
             "eligibility_conditions": {"min_semester": 5},
             "expected_learning_outcome": "Confidently address core systems questions and architecture scalability trade-offs.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Documentation", "title": "Operating Systems Interview Notes", "url": "https://smartcampus.edu/placement/os-notes", "platform": "Internal", "is_free": True},
+                {
+                    "resource_type": "Documentation",
+                    "title": "Operating Systems Interview Notes",
+                    "url": "https://resources.example.org/placement/os-notes",
+                    "platform": "Internal",
+                    "is_free": True,
+                },
             ],
         },
         # 8. Hackathon Participation
@@ -239,7 +398,13 @@ class RecommendationService:
             "expected_learning_outcome": "Deliver a validated working minimum viable product (MVP) under 36-hour competitive hackathon conditions.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Documentation", "title": "SIH Problem Statement Portal", "url": "https://www.sih.gov.in", "platform": "Gov Portal", "is_free": True},
+                {
+                    "resource_type": "Documentation",
+                    "title": "SIH Problem Statement Portal",
+                    "url": "https://www.sih.gov.in",
+                    "platform": "Gov Portal",
+                    "is_free": True,
+                },
             ],
         },
         # 9. Examination Preparation
@@ -251,13 +416,19 @@ class RecommendationService:
             "target_audience": "Students preparing for upcoming semester end examinations",
             "difficulty_level": "Intermediate",
             "provider": "Controller of Examinations",
-            "resource_url": "https://smartcampus.edu/academics/question-bank",
+            "resource_url": "https://resources.example.org/academics/question-bank",
             "estimated_duration": "2 Weeks",
             "eligibility_conditions": {"min_semester": 1},
             "expected_learning_outcome": "Familiarize with examination answer schemas, mark distributions, and standard derivation steps.",
             "status": "Active",
             "resources": [
-                {"resource_type": "Documentation", "title": "Solved Question Paper Archives", "url": "https://smartcampus.edu/academics/question-bank", "platform": "Internal", "is_free": True},
+                {
+                    "resource_type": "Documentation",
+                    "title": "Solved Question Paper Archives",
+                    "url": "https://resources.example.org/academics/question-bank",
+                    "platform": "Internal",
+                    "is_free": True,
+                },
             ],
         },
     ]
@@ -266,7 +437,9 @@ class RecommendationService:
     # CATALOGUE SEEDING & CRUD
     # -------------------------------------------------------------------------
     @classmethod
-    def seed_default_catalogue_if_needed(cls, db: Session, user_id: Optional[int] = None) -> List[RecommendationCatalogue]:
+    def seed_default_catalogue_if_needed(
+        cls, db: Session, user_id: Optional[int] = None
+    ) -> List[RecommendationCatalogue]:
         """Ensures canonical learning catalogue is populated with approved items."""
         existing_titles = {c.title for c in db.query(RecommendationCatalogue).all()}
         created_items = []
@@ -329,7 +502,9 @@ class RecommendationService:
         return query.order_by(RecommendationCatalogue.category.asc(), RecommendationCatalogue.title.asc()).all()
 
     @staticmethod
-    def create_catalogue_item(db: Session, data: Dict[str, Any], user_id: Optional[int] = None) -> RecommendationCatalogue:
+    def create_catalogue_item(
+        db: Session, data: Dict[str, Any], user_id: Optional[int] = None
+    ) -> RecommendationCatalogue:
         resources_data = data.pop("resources", None) or []
         item = RecommendationCatalogue(**data, created_by_id=user_id)
         db.add(item)
@@ -352,7 +527,9 @@ class RecommendationService:
         return item
 
     @staticmethod
-    def update_catalogue_item(db: Session, item: RecommendationCatalogue, data: Dict[str, Any]) -> RecommendationCatalogue:
+    def update_catalogue_item(
+        db: Session, item: RecommendationCatalogue, data: Dict[str, Any]
+    ) -> RecommendationCatalogue:
         for k, v in data.items():
             if v is not None and hasattr(item, k):
                 setattr(item, k, v)
@@ -375,12 +552,29 @@ class RecommendationService:
         student_id: int,
         force_regenerate: bool = False,
     ) -> List[Recommendation]:
+        """Generate grounded recommendations for one student and return all of theirs in display order.
+
+        Each rule below looks at one kind of evidence in the student's record and, when it finds a gap,
+        suggests the first matching *active* catalogue item the student does not already have:
+
+        1. weak subjects        — exam score < 50, grade F/C or a backlog; CIA assessments < 50%
+        2. career-goal gaps     — skills required for a declared goal that the student has not recorded
+                                  (at most two skill suggestions), plus missing goal certifications
+        3. interests            — projects or hackathons tagged with a declared interest
+        4. placement readiness  — interview preparation and soft skills from semester 5 onwards
+        5. high performers      — advanced challenges when nothing else applies and the student has no
+                                  recommendations yet
+
+        Titles already suggested, accepted, in progress or completed are never suggested again, so calling
+        this repeatedly is safe and only adds what is new.
+
+        ``force_regenerate=True`` (used after a student changes their career goals or interests) first
+        withdraws system suggestions the student has not acted on — status SUGGESTED, no progress and no
+        feedback — so that suggestions based on the old profile do not linger, then generates afresh.
+        Anything accepted, started, completed, rejected or proposed by a mentor is always kept.
         """
-        Analyzes student academic metrics, assessments, skill gaps, interests,
-        and career goals to generate personalized, non-arbitrary recommendations.
-        """
-        # Ensure default catalogue exists
         cls.seed_default_catalogue_if_needed(db)
+        withdrawn = cls._withdraw_untouched_suggestions(db, student_id) if force_regenerate else 0
 
         student = (
             db.query(Student)
@@ -400,298 +594,75 @@ class RecommendationService:
         if not student:
             return []
 
-        # Existing active or completed recommendation titles to prevent duplicates
-        existing_recs = student.recommendations or []
-        existing_rec_titles = {
-            r.title.strip().lower()
-            for r in existing_recs
-            if r.status in ["SUGGESTED", "ACCEPTED", "IN_PROGRESS", "COMPLETED"]
-        }
+        catalogue: Dict[str, List[RecommendationCatalogue]] = {}
+        for item in db.query(RecommendationCatalogue).filter(RecommendationCatalogue.status == "Active").all():
+            catalogue.setdefault(item.category, []).append(item)
 
-        # Existing student skills (lowercase)
-        student_skill_names = {
-            s.skill.name.strip().lower() for s in student.skills if s.skill and s.skill.name
-        }
-        # Existing certifications (lowercase)
-        certified_titles = {c.title.strip().lower() for c in student.certifications}
+        plan = _RecommendationPlan(db, student)
+        _recommend_for_weak_subjects(plan, catalogue)
+        _recommend_for_career_goals(plan, catalogue)
+        _recommend_for_interests(plan, catalogue)
+        _recommend_for_placement_season(plan, catalogue)
+        _recommend_challenges_for_high_performers(plan, catalogue)
 
-        generated: List[Recommendation] = []
-        catalogue_items = db.query(RecommendationCatalogue).filter(RecommendationCatalogue.status == "Active").all()
-        cat_by_cat: Dict[str, List[RecommendationCatalogue]] = {}
-        for c in catalogue_items:
-            cat_by_cat.setdefault(c.category, []).append(c)
-
-        career_goals = student.career_goals or []
-        interests = student.interests or []
-
-        # ---------------------------------------------------------------------
-        # 1. EVALUATE WEAK SUBJECTS & ASSESSMENT PERFORMANCE
-        # ---------------------------------------------------------------------
-        weak_subjects: List[Tuple[str, str, float, str]] = []  # (code, name, score, reason)
-
-        # Check Subject Results (< 50% or Backlog)
-        for res in student.subject_results or []:
-            if res.is_backlog or res.total_marks < 50.0 or res.letter_grade in ["F", "C"]:
-                subj_name = res.subject.name if res.subject else "Core Subject"
-                subj_code = res.subject.code if res.subject else "COURSE"
-                weak_subjects.append((
-                    subj_code,
-                    subj_name,
-                    res.total_marks,
-                    f"Exam score of {res.total_marks:.1f}/100 (Grade {res.letter_grade})"
-                ))
-
-        # Check Continuous Assessments (< 50%)
-        for asm in student.assessments or []:
-            if asm.percentage < 50.0:
-                subj_name = asm.subject.name if asm.subject else "Continuous Assessment"
-                subj_code = asm.subject.code if asm.subject else "COURSE"
-                weak_subjects.append((
-                    subj_code,
-                    subj_name,
-                    asm.percentage,
-                    f"CIA assessment '{asm.assessment_type}' score of {asm.percentage:.1f}% ({asm.marks_obtained}/{asm.max_marks})"
-                ))
-
-        # Recommend Subject Improvement & Study Resources for Weak Subjects
-        for code, name, score, detail in weak_subjects:
-            matched_items = [
-                c for c in cat_by_cat.get("SUBJECT_IMPROVEMENT", [])
-                if (c.eligibility_conditions and any(
-                    k in name.lower() or k in code.lower()
-                    for k in c.eligibility_conditions.get("weak_subjects", [])
-                )) or (name.lower() in c.title.lower())
-            ]
-
-            if not matched_items:
-                # Use general academic preparation or study resources
-                matched_items = cat_by_cat.get("STUDY_RESOURCES", []) + cat_by_cat.get("EXAMINATION_PREPARATION", [])
-
-            for item in matched_items:
-                if item.title.strip().lower() not in existing_rec_titles:
-                    rec = Recommendation(
-                        student_id=student.id,
-                        catalogue_id=item.id,
-                        title=f"{item.title} — Targeted for {name}",
-                        category="SUBJECT_IMPROVEMENT",
-                        reason=(
-                            f"Identified academic vulnerability in {name} ({code}) based on your {detail}. "
-                            f"Completing this structured learning track will reinforce foundational concepts before semester exams."
-                        ),
-                        gap_type="ACADEMIC_WEAKNESS",
-                        gap_detail=f"Low score in {name} ({detail})",
-                        expected_outcome=item.expected_learning_outcome or f"Attain score recovery above 65% in {name}.",
-                        priority="HIGH" if score < 40.0 else "MEDIUM",
-                        resource_url=item.resource_url,
-                        suggested_completion_time=item.estimated_duration or "3 Weeks",
-                        status="SUGGESTED",
-                        source="SYSTEM",
-                    )
-                    db.add(rec)
-                    generated.append(rec)
-                    existing_rec_titles.add(rec.title.strip().lower())
-                    break  # One targeted recommendation per weak subject
-
-        # ---------------------------------------------------------------------
-        # 2. EVALUATE CAREER GOAL SKILL GAPS
-        # ---------------------------------------------------------------------
-        for goal in career_goals:
-            reqs = CAREER_GOAL_REQUIREMENTS.get(goal)
-            if not reqs:
-                continue
-
-            missing_skills = [
-                s for s in reqs["required_skills"]
-                if s.lower() not in student_skill_names
-            ]
-
-            for skill in missing_skills:  # Check all missing skills for matching catalogue courses
-                # Find matching learning courses or programming practice
-                skill_items = [
-                    c for c in (cat_by_cat.get("LEARNING_COURSES", []) + cat_by_cat.get("PROGRAMMING_PRACTICE", []))
-                    if (c.required_skill and c.required_skill.lower() == skill.lower())
-                    or (skill.lower() in c.title.lower())
-                    or (c.eligibility_conditions and skill.lower() in [s.lower() for s in c.eligibility_conditions.get("target_skills", [])])
-                ]
-
-                for item in skill_items:
-                    if item.title.strip().lower() not in existing_rec_titles:
-                        rec = Recommendation(
-                            student_id=student.id,
-                            catalogue_id=item.id,
-                            title=item.title,
-                            category=item.category,
-                            reason=(
-                                f"You have selected '{goal}' as your career goal. Proficiency in '{skill}' "
-                                f"is an industry prerequisite but is currently missing from your recorded skills."
-                            ),
-                            gap_type="SKILL_DEFICIT",
-                            gap_detail=f"Missing skill '{skill}' required for {goal}",
-                            expected_outcome=item.expected_learning_outcome or f"Demonstrate working competency in {skill}.",
-                            priority="HIGH",
-                            resource_url=item.resource_url,
-                            suggested_completion_time=item.estimated_duration or "4 Weeks",
-                            status="SUGGESTED",
-                            source="SYSTEM",
-                        )
-                        db.add(rec)
-                        generated.append(rec)
-                        existing_rec_titles.add(item.title.strip().lower())
-                        break
-
-                if len([r for r in generated if r.gap_type == "SKILL_DEFICIT"]) >= 2:
-                    break  # Up to 2 skill gap recommendations per student
-
-            # Recommend Target Certifications (if not certified yet)
-            for cert_name in reqs.get("certifications", []):
-                if any(cert_name.lower() in c_t for c_t in certified_titles):
-                    continue
-
-                cert_items = [
-                    c for c in cat_by_cat.get("TECHNICAL_CERTIFICATIONS", [])
-                    if any(w in c.title.lower() for w in cert_name.lower().split()[:2])
-                ]
-                for item in cert_items:
-                    if item.title.strip().lower() not in existing_rec_titles:
-                        rec = Recommendation(
-                            student_id=student.id,
-                            catalogue_id=item.id,
-                            title=item.title,
-                            category="TECHNICAL_CERTIFICATIONS",
-                            reason=(
-                                f"Industry certification '{cert_name}' provides formal third-party credentialing "
-                                f"for your career goal as '{goal}', significantly elevating placement competitiveness."
-                            ),
-                            gap_type="CAREER_ALIGNMENT",
-                            gap_detail=f"Uncertified in {cert_name} for target role {goal}",
-                            expected_outcome=item.expected_learning_outcome or f"Attain {cert_name} certification.",
-                            priority="MEDIUM",
-                            resource_url=item.resource_url,
-                            suggested_completion_time=item.estimated_duration or "8 Weeks",
-                            status="SUGGESTED",
-                            source="SYSTEM",
-                        )
-                        db.add(rec)
-                        generated.append(rec)
-                        existing_rec_titles.add(item.title.strip().lower())
-                        break
-
-        # ---------------------------------------------------------------------
-        # 3. EVALUATE STUDENT INTERESTS & PROJECT SUGGESTIONS
-        # ---------------------------------------------------------------------
-        for interest in interests:
-            interest_items = [
-                c for c in (cat_by_cat.get("PROJECT_SUGGESTIONS", []) + cat_by_cat.get("HACKATHON_PARTICIPATION", []))
-                if (c.eligibility_conditions and interest.lower() in [
-                    i.lower() for i in c.eligibility_conditions.get("interests", [])
-                ]) or (interest.lower() in c.title.lower())
-            ]
-
-            for item in interest_items:
-                if item.title.strip().lower() not in existing_rec_titles:
-                    rec = Recommendation(
-                        student_id=student.id,
-                        catalogue_id=item.id,
-                        title=item.title,
-                        category=item.category,
-                        reason=(
-                            f"Matched to your expressed interest in '{interest}'. Engaging in practical engineering "
-                            f"projects builds tangible portfolio artifacts for campus recruitment."
-                        ),
-                        gap_type="INTEREST_EXPLORATION",
-                        gap_detail=f"Practical project experience in {interest}",
-                        expected_outcome=item.expected_learning_outcome or f"Build an end-to-end prototype in {interest}.",
-                        priority="MEDIUM",
-                        resource_url=item.resource_url,
-                        suggested_completion_time=item.estimated_duration or "5 Weeks",
-                        status="SUGGESTED",
-                        source="SYSTEM",
-                    )
-                    db.add(rec)
-                    generated.append(rec)
-                    existing_rec_titles.add(item.title.strip().lower())
-                    break
-
-        # ---------------------------------------------------------------------
-        # 4. PLACEMENT & INTERNSHIP READINESS (Semesters 5-8)
-        # ---------------------------------------------------------------------
-        if student.current_semester >= 5:
-            placement_items = cat_by_cat.get("PLACEMENT_PREPARATION", []) + cat_by_cat.get("SOFT_SKILLS", [])
-            for item in placement_items:
-                if item.title.strip().lower() not in existing_rec_titles:
-                    rec = Recommendation(
-                        student_id=student.id,
-                        catalogue_id=item.id,
-                        title=item.title,
-                        category=item.category,
-                        reason=(
-                            f"As a Semester {student.current_semester} student preparing for campus recruitment drives, "
-                            f"mastering technical interview problem-solving and structured communication is critical."
-                        ),
-                        gap_type="CAREER_ALIGNMENT",
-                        gap_detail="Campus placement technical readiness & communication",
-                        expected_outcome=item.expected_learning_outcome or "Perform strongly in technical & HR interview rounds.",
-                        priority="HIGH",
-                        resource_url=item.resource_url,
-                        suggested_completion_time=item.estimated_duration or "3 Weeks",
-                        status="SUGGESTED",
-                        source="SYSTEM",
-                    )
-                    db.add(rec)
-                    generated.append(rec)
-                    existing_rec_titles.add(item.title.strip().lower())
-                    break
-
-        # ---------------------------------------------------------------------
-        # 5. NO IDENTIFIED GAPS FALLBACK (HEALTHY / STAR PROFILE)
-        # ---------------------------------------------------------------------
-        if not generated and not existing_recs:
-            # For students meeting all benchmarks, recommend advanced hackathons and competitive DSA
-            star_items = cat_by_cat.get("PROGRAMMING_PRACTICE", []) + cat_by_cat.get("HACKATHON_PARTICIPATION", [])
-            for item in star_items[:2]:
-                if item.title.strip().lower() not in existing_rec_titles:
-                    rec = Recommendation(
-                        student_id=student.id,
-                        catalogue_id=item.id,
-                        title=item.title,
-                        category=item.category,
-                        reason=(
-                            "Outstanding academic standing and strong baseline performance observed. "
-                            "Recommended advanced technical challenge to accelerate elite placement and competition readiness."
-                        ),
-                        gap_type="CAREER_ALIGNMENT",
-                        gap_detail="Advanced challenge track for high performers",
-                        expected_outcome=item.expected_learning_outcome or "Excel in competitive national programming challenges.",
-                        priority="MEDIUM",
-                        resource_url=item.resource_url,
-                        suggested_completion_time=item.estimated_duration or "4 Weeks",
-                        status="SUGGESTED",
-                        source="SYSTEM",
-                    )
-                    db.add(rec)
-                    generated.append(rec)
-                    existing_rec_titles.add(item.title.strip().lower())
-
-        if generated:
+        if plan.generated or withdrawn:
             db.commit()
-            for r in generated:
-                db.refresh(r)
+            for rec in plan.generated:
+                db.refresh(rec)
 
-        return (
+        return recommendations_in_display_order(db).filter(Recommendation.student_id == student_id).all()
+
+    @staticmethod
+    def _withdraw_untouched_suggestions(db: Session, student_id: int) -> int:
+        """Delete SYSTEM suggestions with no student interaction; returns how many were withdrawn."""
+        untouched = (
             db.query(Recommendation)
-            .options(
-                joinedload(Recommendation.catalogue),
-                joinedload(Recommendation.progress_logs),
-                joinedload(Recommendation.feedback),
-            )
-            .filter(Recommendation.student_id == student_id)
-            .order_by(
-                desc(Recommendation.priority == "CRITICAL"),
-                desc(Recommendation.priority == "HIGH"),
-                desc(Recommendation.created_at),
+            .filter(
+                Recommendation.student_id == student_id,
+                Recommendation.source == "SYSTEM",
+                Recommendation.status == "SUGGESTED",
             )
             .all()
         )
+        withdrawn = 0
+        for rec in untouched:
+            if rec.progress_logs or rec.feedback:
+                continue
+            db.delete(rec)
+            withdrawn += 1
+        if withdrawn:
+            db.flush()
+            db.expire_all()  # reload the student's recommendation collection without the withdrawn rows
+        return withdrawn
+
+    @staticmethod
+    def list_recommendations(
+        db: Session,
+        current_user: User,
+        *,
+        student_id: Optional[int] = None,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> List[RecommendationOut]:
+        """Filtered recommendations. Students only ever see their own; staff are limited by the tenant scope."""
+        query = recommendations_in_display_order(db)
+        if current_user.role == UserRole.STUDENT.value:
+            student = own_student_record(db, current_user)
+            if not student:
+                return []
+            query = query.filter(Recommendation.student_id == student.id)
+        elif student_id:
+            query = query.filter(Recommendation.student_id == student_id)
+        if category:
+            query = query.filter(Recommendation.category == category)
+        if status:
+            query = query.filter(Recommendation.status == status)
+        if priority:
+            query = query.filter(Recommendation.priority == priority)
+        return [recommendation_to_out(r) for r in query.offset(skip).limit(limit).all()]
 
     # -------------------------------------------------------------------------
     # STUDENT LEARNING PATH & PLAN COMPILATION
@@ -707,24 +678,7 @@ class RecommendationService:
             return {}
 
         # Fetch or auto-generate recommendations if none exist
-        recs = (
-            db.query(Recommendation)
-            .options(
-                joinedload(Recommendation.student).joinedload(Student.user),
-                joinedload(Recommendation.student).joinedload(Student.department),
-                joinedload(Recommendation.catalogue),
-                joinedload(Recommendation.progress_logs),
-                joinedload(Recommendation.feedback),
-                joinedload(Recommendation.created_by),
-            )
-            .filter(Recommendation.student_id == student_id)
-            .order_by(
-                desc(Recommendation.priority == "CRITICAL"),
-                desc(Recommendation.priority == "HIGH"),
-                desc(Recommendation.created_at),
-            )
-            .all()
-        )
+        recs = recommendations_in_display_order(db).filter(Recommendation.student_id == student_id).all()
 
         if not recs:
             recs = cls.generate_recommendations_for_student(db, student_id)
@@ -756,8 +710,8 @@ class RecommendationService:
             "current_semester": student.current_semester,
             "career_goals": student.career_goals or [],
             "interests": student.interests or [],
-            "academic_improvement_plan": academic_plan,
-            "career_development_plan": career_plan,
+            "academic_improvement_plan": [recommendation_to_out(r) for r in academic_plan],
+            "career_development_plan": [recommendation_to_out(r) for r in career_plan],
             "total_recommendations": len(recs),
             "accepted_count": accepted_c,
             "in_progress_count": in_progress_c,
@@ -775,7 +729,7 @@ class RecommendationService:
             raise ValueError("Recommendation not found")
 
         rec.status = "ACCEPTED"
-        rec.accepted_at = datetime.utcnow()
+        rec.accepted_at = utcnow()
 
         progress = RecommendationProgress(
             recommendation_id=rec.id,
@@ -797,7 +751,7 @@ class RecommendationService:
             raise ValueError("Recommendation not found")
 
         rec.status = "REJECTED"
-        rec.rejected_at = datetime.utcnow()
+        rec.rejected_at = utcnow()
         rec.rejection_reason = reason
         db.commit()
         db.refresh(rec)
@@ -820,7 +774,7 @@ class RecommendationService:
         rec.status = status
         if percent_complete >= 100:
             rec.status = "COMPLETED"
-            rec.completed_at = datetime.utcnow()
+            rec.completed_at = utcnow()
         elif status == "IN_PROGRESS" and rec.status != "COMPLETED":
             rec.status = "IN_PROGRESS"
 
@@ -848,9 +802,11 @@ class RecommendationService:
         comments: Optional[str],
         outcome_achieved: bool,
     ) -> RecommendationFeedback:
-        existing = db.query(RecommendationFeedback).filter(
-            RecommendationFeedback.recommendation_id == recommendation_id
-        ).first()
+        existing = (
+            db.query(RecommendationFeedback)
+            .filter(RecommendationFeedback.recommendation_id == recommendation_id)
+            .first()
+        )
 
         if existing:
             existing.rating = rating
@@ -903,16 +859,6 @@ class RecommendationService:
         db.refresh(rec)
         return rec
 
-    @staticmethod
-    def approve_mentor_suggestion(db: Session, recommendation_id: int, user_id: int) -> Recommendation:
-        rec = db.query(Recommendation).filter(Recommendation.id == recommendation_id).first()
-        if not rec:
-            raise ValueError("Recommendation not found")
-
-        rec.mentor_approval_status = "APPROVED"
-        db.commit()
-        db.refresh(rec)
-        return rec
 
     @staticmethod
     def add_guidance_notes(db: Session, recommendation_id: int, notes: str) -> Recommendation:
@@ -920,8 +866,270 @@ class RecommendationService:
         if not rec:
             raise ValueError("Recommendation not found")
 
-        time_tag = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        time_tag = utcnow().strftime("%Y-%m-%d %H:%M")
         rec.mentor_guidance_notes = (rec.mentor_guidance_notes or "") + f"\n[{time_tag}] {notes}"
         db.commit()
         db.refresh(rec)
         return rec
+
+
+# ---------------------------------------------------------------------------
+# Recommendation generation rules (see generate_recommendations_for_student)
+# ---------------------------------------------------------------------------
+# Statuses that mean "the student already has this one" for duplicate prevention.
+_TAKEN_STATUSES = {"SUGGESTED", "ACCEPTED", "IN_PROGRESS", "COMPLETED"}
+_MAX_SKILL_GAP_SUGGESTIONS = 2
+
+
+class _RecommendationPlan:
+    """New recommendations for one student, skipping catalogue titles they already have."""
+
+    def __init__(self, db: Session, student: Student):
+        self.db = db
+        self.student = student
+        self.existing = student.recommendations or []
+        self.taken_titles = {r.title.strip().lower() for r in self.existing if r.status in _TAKEN_STATUSES}
+        self.skill_names = {s.skill.name.strip().lower() for s in student.skills if s.skill and s.skill.name}
+        self.certified_titles = {c.title.strip().lower() for c in student.certifications}
+        self.generated: List[Recommendation] = []
+
+    def is_new(self, item: RecommendationCatalogue) -> bool:
+        return item.title.strip().lower() not in self.taken_titles
+
+    def add(
+        self,
+        item: RecommendationCatalogue,
+        *,
+        reason: str,
+        gap_type: str,
+        gap_detail: str,
+        priority: str,
+        default_outcome: str,
+        default_duration: str,
+        title: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> Recommendation:
+        rec = Recommendation(
+            student_id=self.student.id,
+            catalogue_id=item.id,
+            title=title or item.title,
+            category=category or item.category,
+            reason=reason,
+            gap_type=gap_type,
+            gap_detail=gap_detail,
+            expected_outcome=item.expected_learning_outcome or default_outcome,
+            priority=priority,
+            resource_url=item.resource_url,
+            suggested_completion_time=item.estimated_duration or default_duration,
+            status="SUGGESTED",
+            source="SYSTEM",
+        )
+        self.db.add(rec)
+        self.generated.append(rec)
+        self.taken_titles.add(rec.title.strip().lower())
+        return rec
+
+    def count(self, gap_type: str) -> int:
+        return sum(1 for r in self.generated if r.gap_type == gap_type)
+
+
+def _weak_subjects(student: Student) -> List[Tuple[str, str, float, str]]:
+    """(subject code, subject name, score, evidence) for every weak exam result or assessment."""
+    weak: List[Tuple[str, str, float, str]] = []
+    for res in student.subject_results or []:
+        if res.is_backlog or res.total_marks < 50.0 or res.letter_grade in ["F", "C"]:
+            weak.append(
+                (
+                    res.subject.code if res.subject else "COURSE",
+                    res.subject.name if res.subject else "Core Subject",
+                    res.total_marks,
+                    f"Exam score of {res.total_marks:.1f}/100 (Grade {res.letter_grade})",
+                )
+            )
+    for asm in student.assessments or []:
+        if asm.percentage < 50.0:
+            weak.append(
+                (
+                    asm.subject.code if asm.subject else "COURSE",
+                    asm.subject.name if asm.subject else "Continuous Assessment",
+                    asm.percentage,
+                    f"CIA assessment '{asm.assessment_type}' score of {asm.percentage:.1f}% "
+                    f"({asm.marks_obtained}/{asm.max_marks})",
+                )
+            )
+    return weak
+
+
+def _recommend_for_weak_subjects(
+    plan: _RecommendationPlan, catalogue: Dict[str, List[RecommendationCatalogue]]
+) -> None:
+    """One targeted item per weak subject; general study resources when nothing targets that subject."""
+    for code, name, score, detail in _weak_subjects(plan.student):
+        matched = [
+            c
+            for c in catalogue.get("SUBJECT_IMPROVEMENT", [])
+            if (
+                c.eligibility_conditions
+                and any(
+                    k in name.lower() or k in code.lower() for k in c.eligibility_conditions.get("weak_subjects", [])
+                )
+            )
+            or (name.lower() in c.title.lower())
+        ]
+        if not matched:
+            matched = catalogue.get("STUDY_RESOURCES", []) + catalogue.get("EXAMINATION_PREPARATION", [])
+        for item in matched:
+            if plan.is_new(item):
+                plan.add(
+                    item,
+                    title=f"{item.title} — Targeted for {name}",
+                    category="SUBJECT_IMPROVEMENT",
+                    reason=(
+                        f"Identified academic vulnerability in {name} ({code}) based on your {detail}. "
+                        f"Completing this structured learning track will reinforce foundational concepts before semester exams."
+                    ),
+                    gap_type="ACADEMIC_WEAKNESS",
+                    gap_detail=f"Low score in {name} ({detail})",
+                    default_outcome=f"Attain score recovery above 65% in {name}.",
+                    priority="HIGH" if score < 40.0 else "MEDIUM",
+                    default_duration="3 Weeks",
+                )
+                break
+
+
+def _recommend_for_career_goals(plan: _RecommendationPlan, catalogue: Dict[str, List[RecommendationCatalogue]]) -> None:
+    """Courses for missing goal skills (capped across all goals) and certifications not yet earned."""
+    for goal in plan.student.career_goals or []:
+        reqs = CAREER_GOAL_REQUIREMENTS.get(goal)
+        if not reqs:
+            continue
+
+        missing_skills = [s for s in reqs["required_skills"] if s.lower() not in plan.skill_names]
+        for skill in missing_skills:
+            skill_items = [
+                c
+                for c in (catalogue.get("LEARNING_COURSES", []) + catalogue.get("PROGRAMMING_PRACTICE", []))
+                if (c.required_skill and c.required_skill.lower() == skill.lower())
+                or (skill.lower() in c.title.lower())
+                or (
+                    c.eligibility_conditions
+                    and skill.lower() in [s.lower() for s in c.eligibility_conditions.get("target_skills", [])]
+                )
+            ]
+            for item in skill_items:
+                if plan.is_new(item):
+                    plan.add(
+                        item,
+                        reason=(
+                            f"You have selected '{goal}' as your career goal. Proficiency in '{skill}' "
+                            f"is an industry prerequisite but is currently missing from your recorded skills."
+                        ),
+                        gap_type="SKILL_DEFICIT",
+                        gap_detail=f"Missing skill '{skill}' required for {goal}",
+                        default_outcome=f"Demonstrate working competency in {skill}.",
+                        priority="HIGH",
+                        default_duration="4 Weeks",
+                    )
+                    break
+            if plan.count("SKILL_DEFICIT") >= _MAX_SKILL_GAP_SUGGESTIONS:
+                break
+
+        for cert_name in reqs.get("certifications", []):
+            if any(cert_name.lower() in title for title in plan.certified_titles):
+                continue
+            cert_items = [
+                c
+                for c in catalogue.get("TECHNICAL_CERTIFICATIONS", [])
+                if any(w in c.title.lower() for w in cert_name.lower().split()[:2])
+            ]
+            for item in cert_items:
+                if plan.is_new(item):
+                    plan.add(
+                        item,
+                        category="TECHNICAL_CERTIFICATIONS",
+                        reason=(
+                            f"Industry certification '{cert_name}' provides formal third-party credentialing "
+                            f"for your career goal as '{goal}', significantly elevating placement competitiveness."
+                        ),
+                        gap_type="CAREER_ALIGNMENT",
+                        gap_detail=f"Uncertified in {cert_name} for target role {goal}",
+                        default_outcome=f"Attain {cert_name} certification.",
+                        priority="MEDIUM",
+                        default_duration="8 Weeks",
+                    )
+                    break
+
+
+def _recommend_for_interests(plan: _RecommendationPlan, catalogue: Dict[str, List[RecommendationCatalogue]]) -> None:
+    """One project or hackathon per declared interest."""
+    for interest in plan.student.interests or []:
+        interest_items = [
+            c
+            for c in (catalogue.get("PROJECT_SUGGESTIONS", []) + catalogue.get("HACKATHON_PARTICIPATION", []))
+            if (
+                c.eligibility_conditions
+                and interest.lower() in [i.lower() for i in c.eligibility_conditions.get("interests", [])]
+            )
+            or (interest.lower() in c.title.lower())
+        ]
+        for item in interest_items:
+            if plan.is_new(item):
+                plan.add(
+                    item,
+                    reason=(
+                        f"Matched to your expressed interest in '{interest}'. Engaging in practical engineering "
+                        f"projects builds tangible portfolio artifacts for campus recruitment."
+                    ),
+                    gap_type="INTEREST_EXPLORATION",
+                    gap_detail=f"Practical project experience in {interest}",
+                    default_outcome=f"Build an end-to-end prototype in {interest}.",
+                    priority="MEDIUM",
+                    default_duration="5 Weeks",
+                )
+                break
+
+
+def _recommend_for_placement_season(
+    plan: _RecommendationPlan, catalogue: Dict[str, List[RecommendationCatalogue]]
+) -> None:
+    """From semester 5, one placement-preparation or soft-skills item."""
+    semester = plan.student.current_semester
+    if semester < 5:
+        return
+    for item in catalogue.get("PLACEMENT_PREPARATION", []) + catalogue.get("SOFT_SKILLS", []):
+        if plan.is_new(item):
+            plan.add(
+                item,
+                reason=(
+                    f"As a Semester {semester} student preparing for campus recruitment drives, "
+                    f"mastering technical interview problem-solving and structured communication is critical."
+                ),
+                gap_type="CAREER_ALIGNMENT",
+                gap_detail="Campus placement technical readiness & communication",
+                default_outcome="Perform strongly in technical & HR interview rounds.",
+                priority="HIGH",
+                default_duration="3 Weeks",
+            )
+            break
+
+
+def _recommend_challenges_for_high_performers(
+    plan: _RecommendationPlan, catalogue: Dict[str, List[RecommendationCatalogue]]
+) -> None:
+    """When no rule found a gap and the student has nothing yet, suggest up to two advanced challenges."""
+    if plan.generated or plan.existing:
+        return
+    for item in (catalogue.get("PROGRAMMING_PRACTICE", []) + catalogue.get("HACKATHON_PARTICIPATION", []))[:2]:
+        if plan.is_new(item):
+            plan.add(
+                item,
+                reason=(
+                    "Outstanding academic standing and strong baseline performance observed. "
+                    "Recommended advanced technical challenge to accelerate elite placement and competition readiness."
+                ),
+                gap_type="CAREER_ALIGNMENT",
+                gap_detail="Advanced challenge track for high performers",
+                default_outcome="Excel in competitive national programming challenges.",
+                priority="MEDIUM",
+                default_duration="4 Weeks",
+            )

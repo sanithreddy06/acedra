@@ -9,20 +9,22 @@ Measures:
 6. Database Aggregation & Complex Query Efficiency
 """
 import io
-import time
 import statistics
-from typing import Dict, Any, List
+import time
+from typing import Any, Dict
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
 
 ROLE_CREDENTIALS = {
-    "student": ("student@smartcampus.edu", "StudentPass123!"),
-    "faculty": ("faculty@smartcampus.edu", "FacultyPass123!"),
-    "mentor": ("mentor@smartcampus.edu", "MentorPass123!"),
-    "admin": ("admin@smartcampus.edu", "AdminPass123!"),
-    "placement_officer": ("placement@smartcampus.edu", "PlacementPass123!"),
+    "student": ("student@reva-demo.example", "StudentPass123!"),
+    "faculty": ("faculty@reva-demo.example", "FacultyPass123!"),
+    "mentor": ("mentor@reva-demo.example", "MentorPass123!"),
+    "admin": ("admin@reva-demo.example", "AdminPass123!"),
+    "placement_officer": ("placement@reva-demo.example", "PlacementPass123!"),
 }
 
 
@@ -37,7 +39,7 @@ def measure_endpoint(method: str, path: str, token: str = None, json_body: Any =
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     latencies = []
     status_codes = []
-    
+
     for _ in range(iterations):
         t0 = time.perf_counter()
         if method.upper() == "GET":
@@ -98,7 +100,7 @@ def run_benchmarks():
     print("\n[3/5] Benchmarking CSV Import Validation Throughput...")
     csv_rows = ["usn,name,email,department_code,semester,cgpa"]
     for i in range(100):
-        csv_rows.append(f"1RV22CS{i:03d},Bench Student {i},bench{i}@smartcampus.edu,CSE,5,8.25")
+        csv_rows.append(f"1RV22CS{i:03d},Bench Student {i},bench{i}@reva-demo.example,CSE,5,8.25")
     csv_content = "\n".join(csv_rows).encode("utf-8")
 
     t0 = time.perf_counter()

@@ -1,17 +1,23 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Float, Date, Text, JSON
+from sqlalchemy import JSON, Boolean, Column, Date, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
-class Student(Base, TimestampMixin):
+class Student(Base, TimestampMixin, TenantMixin):
     __tablename__ = "students"
+    __table_args__ = (
+        UniqueConstraint("university_id", "roll_number", name="uq_students_tenant_roll_number"),
+        UniqueConstraint("university_id", "usn", name="uq_students_tenant_usn"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    roll_number = Column(String(50), unique=True, index=True, nullable=False)
-    usn = Column(String(50), unique=True, index=True, nullable=False)
-    srn = Column(String(50), unique=True, index=True, nullable=True)  # Student Registration Number
+    roll_number = Column(String(50), index=True, nullable=False)
+    usn = Column(String(50), index=True, nullable=False)
+    srn = Column(String(50), index=True, nullable=True)  # Student Registration Number
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     program = Column(String(100), default="B.Tech Computer Science & Engineering", nullable=False)
     current_semester = Column(Integer, default=1, nullable=False)
@@ -26,7 +32,9 @@ class Student(Base, TimestampMixin):
 
     # Module 3 Career & Interests
     career_goals = Column(JSON, default=list, nullable=True)  # e.g., ["AI/ML Engineer", "Cloud Architect"]
-    interests = Column(JSON, default=list, nullable=True)     # e.g., ["Deep Learning", "Robotics", "Competitive Programming"]
+    interests = Column(
+        JSON, default=list, nullable=True
+    )  # e.g., ["Deep Learning", "Robotics", "Competitive Programming"]
 
     # Personal profile details
     gender = Column(String(20), nullable=True)
@@ -58,12 +66,13 @@ class Student(Base, TimestampMixin):
     applications = relationship("StudentApplication", back_populates="student", cascade="all, delete-orphan")
 
 
-class Faculty(Base, TimestampMixin):
+class Faculty(Base, TimestampMixin, TenantMixin):
     __tablename__ = "faculty"
+    __table_args__ = (UniqueConstraint("university_id", "employee_id", name="uq_faculty_tenant_employee_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    employee_id = Column(String(50), unique=True, index=True, nullable=False)
+    employee_id = Column(String(50), index=True, nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     designation = Column(String(100), default="Assistant Professor", nullable=False)
     specialization = Column(String(200), nullable=True)
@@ -75,12 +84,13 @@ class Faculty(Base, TimestampMixin):
     course_assignments = relationship("FacultyCourseAssignment", back_populates="faculty")
 
 
-class Mentor(Base, TimestampMixin):
+class Mentor(Base, TimestampMixin, TenantMixin):
     __tablename__ = "mentors"
+    __table_args__ = (UniqueConstraint("university_id", "employee_id", name="uq_mentors_tenant_employee_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    employee_id = Column(String(50), unique=True, index=True, nullable=False)
+    employee_id = Column(String(50), index=True, nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     designation = Column(String(100), default="Senior Faculty Mentor", nullable=False)
     max_mentees = Column(Integer, default=30, nullable=False)
@@ -92,7 +102,7 @@ class Mentor(Base, TimestampMixin):
     assignments = relationship("StudentMentorAssignment", back_populates="mentor")
 
 
-class StudentMentorAssignment(Base, TimestampMixin):
+class StudentMentorAssignment(Base, TimestampMixin, TenantMixin):
     __tablename__ = "student_mentor_assignments"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -21,7 +21,7 @@ from app.services.ai_assistant_service import AIAssistantService
 
 CANONICAL_DOCUMENTS = [
     {
-        "title": "REVA Academic Regulations & Grading System",
+        "title": "[Synthetic] REVA Academic Regulations & Grading System",
         "category": DocumentCategory.ACADEMIC_REGULATIONS.value,
         "description": "Official university regulations governing the 10-point grading system, SGPA/CGPA formulas, minimum credit requirements, and degree qualification criteria.",
         "file_name": "REVA_Academic_Regulations_2026.md",
@@ -51,7 +51,7 @@ Students securing an 'F' grade or prevented from taking end-semester exams due t
 """,
     },
     {
-        "title": "REVA Attendance Policy and Condonation Guidelines",
+        "title": "[Synthetic] REVA Attendance Policy and Condonation Guidelines",
         "category": DocumentCategory.ATTENDANCE_GUIDELINES.value,
         "description": "Comprehensive guidelines specifying mandatory 85% attendance, 75%-84% medical condonation procedures, and detention consequences.",
         "file_name": "REVA_Attendance_Policy_and_Condonation.md",
@@ -73,7 +73,7 @@ Students with attendance strictly below 75% in any registered subject are design
 """,
     },
     {
-        "title": "REVA Continuous Internal Assessment (CIA) Guidelines",
+        "title": "[Synthetic] REVA Continuous Internal Assessment (CIA) Guidelines",
         "category": DocumentCategory.EXAMINATION_GUIDELINES.value,
         "description": "Regulations governing the 50% internal assessment components, minimum 40% qualifying marks, and assignment submissions.",
         "file_name": "REVA_Continuous_Internal_Assessment_Guidelines.md",
@@ -98,7 +98,7 @@ Practical laboratory courses are evaluated every session on a 100% continuous as
 """,
     },
     {
-        "title": "REVA Campus Placement and Corporate Recruitment Policy",
+        "title": "[Synthetic] REVA Campus Placement and Corporate Recruitment Policy",
         "category": DocumentCategory.PLACEMENT_GUIDELINES.value,
         "description": "Rules for corporate recruitment drives, Dream Offer exceptions, eligibility criteria, and zero-backlog policies.",
         "file_name": "REVA_Campus_Placement_and_Recruitment_Rules.md",
@@ -122,7 +122,7 @@ Shortlisted candidates must attend interview rounds in formal business attire, c
 """,
     },
     {
-        "title": "REVA Mandatory Internship and Capstone Project Norms",
+        "title": "[Synthetic] REVA Mandatory Internship and Capstone Project Norms",
         "category": DocumentCategory.INTERNSHIP_GUIDELINES.value,
         "description": "Guidelines for mandatory 6-8 week summer industry internships, faculty mentorship, credits, and viva voce examinations.",
         "file_name": "REVA_Mandatory_Internship_and_Capstone_Norms.md",
@@ -143,7 +143,7 @@ Unsatisfactory performance or non-completion requires repeating the internship i
 """,
     },
     {
-        "title": "REVA Student Handbook, Campus Facilities and Conduct",
+        "title": "[Synthetic] REVA Student Handbook, Campus Facilities and Conduct",
         "category": DocumentCategory.CAMPUS_HANDBOOK.value,
         "description": "Campus facilities, Central Library operating hours, code of conduct, digital ID cards, and anti-ragging helpline.",
         "file_name": "REVA_Student_Handbook_and_Conduct.md",

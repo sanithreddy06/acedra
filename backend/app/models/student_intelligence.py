@@ -1,8 +1,11 @@
 import enum
-from datetime import datetime, timezone, date
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Float, Date as SqlDate, Text, JSON
+
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date as SqlDate
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
@@ -15,18 +18,19 @@ class SkillCategory(str, enum.Enum):
     SOFT_SKILL = "soft_skill"
 
 
-class Skill(Base, TimestampMixin):
+class Skill(Base, TimestampMixin, TenantMixin):
     __tablename__ = "skills"
+    __table_args__ = (UniqueConstraint("university_id", "name", name="uq_skills_tenant_name"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), unique=True, index=True, nullable=False)
+    name = Column(String(100), index=True, nullable=False)
     category = Column(String(50), default="programming", index=True, nullable=False)  # SkillCategory value
     description = Column(String(255), nullable=True)
 
     student_skills = relationship("StudentSkill", back_populates="skill", cascade="all, delete-orphan")
 
 
-class StudentSkill(Base, TimestampMixin):
+class StudentSkill(Base, TimestampMixin, TenantMixin):
     __tablename__ = "student_skills"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -42,7 +46,7 @@ class StudentSkill(Base, TimestampMixin):
     evidence_records = relationship("SkillEvidence", back_populates="student_skill", cascade="all, delete-orphan")
 
 
-class Certification(Base, TimestampMixin):
+class Certification(Base, TimestampMixin, TenantMixin):
     __tablename__ = "certifications"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -58,7 +62,7 @@ class Certification(Base, TimestampMixin):
     student = relationship("Student", back_populates="certifications")
 
 
-class Project(Base, TimestampMixin):
+class Project(Base, TimestampMixin, TenantMixin):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -74,7 +78,7 @@ class Project(Base, TimestampMixin):
     student = relationship("Student", back_populates="projects")
 
 
-class Internship(Base, TimestampMixin):
+class Internship(Base, TimestampMixin, TenantMixin):
     __tablename__ = "internships"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -90,7 +94,7 @@ class Internship(Base, TimestampMixin):
     student = relationship("Student", back_populates="internships")
 
 
-class Hackathon(Base, TimestampMixin):
+class Hackathon(Base, TimestampMixin, TenantMixin):
     __tablename__ = "hackathons"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -105,7 +109,7 @@ class Hackathon(Base, TimestampMixin):
 
 
 # Data Import Audit & Tracking
-class ImportJob(Base, TimestampMixin):
+class ImportJob(Base, TimestampMixin, TenantMixin):
     __tablename__ = "import_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -122,7 +126,7 @@ class ImportJob(Base, TimestampMixin):
     errors = relationship("ImportError", back_populates="job", cascade="all, delete-orphan")
 
 
-class ImportError(Base, TimestampMixin):
+class ImportError(Base, TimestampMixin, TenantMixin):
     __tablename__ = "import_errors"
 
     id = Column(Integer, primary_key=True, index=True)

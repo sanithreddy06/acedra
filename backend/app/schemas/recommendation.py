@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -32,7 +33,14 @@ class RecommendationResourceOut(RecommendationResourceBase):
 # ----------------------------------------------------
 class CatalogueItemBase(BaseModel):
     title: str = Field(..., max_length=200)
-    category: str = Field(..., description="SUBJECT_IMPROVEMENT, STUDY_RESOURCES, LEARNING_COURSES, PROGRAMMING_PRACTICE, TECHNICAL_CERTIFICATIONS, SOFT_SKILLS, EXAMINATION_PREPARATION, PROJECT_SUGGESTIONS, INTERNSHIP_PREPARATION, PLACEMENT_PREPARATION, HACKATHON_PARTICIPATION")
+    category: str = Field(
+        ...,
+        description=(
+            "SUBJECT_IMPROVEMENT, STUDY_RESOURCES, LEARNING_COURSES, PROGRAMMING_PRACTICE, TECHNICAL_CERTIFICATIONS, "
+            "SOFT_SKILLS, EXAMINATION_PREPARATION, PROJECT_SUGGESTIONS, INTERNSHIP_PREPARATION, PLACEMENT_PREPARATION, "
+            "HACKATHON_PARTICIPATION"
+        ),
+    )
     description: str
     required_skill: Optional[str] = None
     target_audience: Optional[str] = None

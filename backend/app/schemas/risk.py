@@ -1,6 +1,21 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Indicators the evaluation engine can observe (services/risk_service._INDICATOR_OBSERVERS) and the
+# comparison operators it understands. Rules using anything else would silently never trigger.
+RISK_INDICATOR_TYPES = (
+    "attendance_percentage", "assessment_percentage", "sgpa_drop", "backlog_count", "missing_assessments", "composite",
+)
+RISK_OPERATORS = ("<", "<=", ">", ">=", "==")
+
+
+def _check_rule_fields(indicator_type: Optional[str], operator: Optional[str]) -> None:
+    if indicator_type is not None and indicator_type not in RISK_INDICATOR_TYPES:
+        raise ValueError(f"indicator_type must be one of: {', '.join(RISK_INDICATOR_TYPES)}")
+    if operator is not None and operator not in RISK_OPERATORS:
+        raise ValueError(f"operator must be one of: {' '.join(RISK_OPERATORS)}")
 
 
 # ----------------------------------------------------
@@ -21,7 +36,11 @@ class RiskRuleBase(BaseModel):
 
 
 class RiskRuleCreate(RiskRuleBase):
-    pass
+    @field_validator("indicator_type", "operator")
+    @classmethod
+    def _supported(cls, v: str, info):
+        _check_rule_fields(v if info.field_name == "indicator_type" else None, v if info.field_name == "operator" else None)
+        return v
 
 
 class RiskRuleUpdate(BaseModel):
@@ -35,6 +54,12 @@ class RiskRuleUpdate(BaseModel):
     conditions_config: Optional[Dict[str, Any]] = None
     suggested_action: Optional[str] = None
     is_active: Optional[bool] = None
+
+    @field_validator("indicator_type", "operator")
+    @classmethod
+    def _supported(cls, v: Optional[str], info):
+        _check_rule_fields(v if info.field_name == "indicator_type" else None, v if info.field_name == "operator" else None)
+        return v
 
 
 class RiskRuleResponse(RiskRuleBase):
@@ -56,7 +81,7 @@ class RiskAlertHistoryResponse(BaseModel):
     old_status: Optional[str] = None
     new_status: Optional[str] = None
     notes: Optional[str] = None
-    performed_by_id: int
+    performed_by_id: Optional[int] = None
     performed_by_name: Optional[str] = None
     created_at: datetime
 
@@ -73,7 +98,7 @@ class AlertAssignmentResponse(BaseModel):
     alert_id: int
     mentor_id: int
     mentor_name: Optional[str] = None
-    assigned_by_id: int
+    assigned_by_id: Optional[int] = None
     assigned_at: datetime
     notes: Optional[str] = None
     status: str
@@ -139,6 +164,19 @@ class RiskAlertResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RiskAlertListResponse(BaseModel):
+    items: List[RiskAlertResponse]
+    total: int
+    skip: int
+    limit: int
+
+
+class RiskAlertDetailResponse(BaseModel):
+    alert: RiskAlertResponse
+    history: List[RiskAlertHistoryResponse]
+    assignments: List[AlertAssignmentResponse]
 
 
 class StudentRiskProfileResponse(BaseModel):

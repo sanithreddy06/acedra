@@ -14,11 +14,17 @@ Step 10: Placement officer reviews institutional placement readiness and opportu
 Step 11: Administrator reviews holistic institutional executive analytics (Module 6).
 """
 import io
-import pytest
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
+
+# --- ACEDRA: the assistant is a private, authenticated feature; AI calls run as the demo student ---
+_ai = TestClient(app)
+_ai_login = _ai.post("/api/v1/auth/login", json={"email": "student@reva-demo.example", "password": "StudentPass123!"})
+_ai.headers.update({"Authorization": f"Bearer {_ai_login.json()['access_token']}"})
 
 
 def login(email: str, password: str) -> str:
@@ -33,10 +39,10 @@ def test_11_step_end_to_end_demonstration_workflow():
     print("=" * 80)
 
     # Tokens for all personas
-    admin_token = login("admin@smartcampus.edu", "AdminPass123!")
-    student_token = login("student@smartcampus.edu", "StudentPass123!")
-    mentor_token = login("mentor@smartcampus.edu", "MentorPass123!")
-    placement_token = login("placement@smartcampus.edu", "PlacementPass123!")
+    admin_token = login("admin@reva-demo.example", "AdminPass123!")
+    student_token = login("student@reva-demo.example", "StudentPass123!")
+    mentor_token = login("mentor@reva-demo.example", "MentorPass123!")
+    placement_token = login("placement@reva-demo.example", "PlacementPass123!")
 
     # -------------------------------------------------------------------------
     # STEP 1: Admin imports student records
@@ -44,8 +50,8 @@ def test_11_step_end_to_end_demonstration_workflow():
     print("\n[STEP 1/11] Admin Imports Student Academic Records...")
     csv_data = (
         "usn,name,email,department_code,semester,cgpa\n"
-        "1RV22CS101,Demo Cohort Student 1,demo1@smartcampus.edu,CSE,5,7.85\n"
-        "1RV22CS102,Demo Cohort Student 2,demo2@smartcampus.edu,CSE,5,6.40\n"
+        "1RV22CS101,Demo Cohort Student 1,demo1@reva-demo.example,CSE,5,7.85\n"
+        "1RV22CS102,Demo Cohort Student 2,demo2@reva-demo.example,CSE,5,6.40\n"
     ).encode("utf-8")
 
     preview_res = client.post(
@@ -134,7 +140,7 @@ def test_11_step_end_to_end_demonstration_workflow():
     # STEP 7: Public chatbot answers general campus question (Mode A)
     # -------------------------------------------------------------------------
     print("\n[STEP 7/11] Public AI Chatbot (Mode A) Answers General Campus Policy Inquiry...")
-    conv_a_res = client.post("/api/v1/ai/conversations", json={
+    conv_a_res = _ai.post("/api/v1/ai/conversations", json={
         "mode": "PUBLIC_MODE_A",
         "title": "Public Policy Demo",
         "session_id": "demo-step7-session"
@@ -142,7 +148,7 @@ def test_11_step_end_to_end_demonstration_workflow():
     assert conv_a_res.status_code == 200
     conv_a_id = conv_a_res.json()["id"]
 
-    msg_a_res = client.post(f"/api/v1/ai/conversations/{conv_a_id}/messages", json={
+    msg_a_res = _ai.post(f"/api/v1/ai/conversations/{conv_a_id}/messages", json={
         "content": "What is the official minimum attendance percentage required to be eligible for end-semester exams?"
     })
     assert msg_a_res.status_code == 200
@@ -154,7 +160,7 @@ def test_11_step_end_to_end_demonstration_workflow():
     # STEP 8: Student chatbot answers personal question (Mode B)
     # -------------------------------------------------------------------------
     print("\n[STEP 8/11] Student AI Assistant (Mode B) Answers Authenticated Personal Academic Query...")
-    conv_b_res = client.post("/api/v1/ai/conversations", json={
+    conv_b_res = _ai.post("/api/v1/ai/conversations", json={
         "mode": "PERSONAL_MODE_B",
         "title": "Personal Academic Progress Demo",
         "session_id": "demo-step8-session"
@@ -162,7 +168,7 @@ def test_11_step_end_to_end_demonstration_workflow():
     assert conv_b_res.status_code == 200
     conv_b_id = conv_b_res.json()["id"]
 
-    msg_b_res = client.post(f"/api/v1/ai/conversations/{conv_b_id}/messages", json={
+    msg_b_res = _ai.post(f"/api/v1/ai/conversations/{conv_b_id}/messages", json={
         "content": "Summarize my current semester academic progress, attendance percentage, and active alerts."
     }, headers={"Authorization": f"Bearer {student_token}"})
     assert msg_b_res.status_code == 200
@@ -198,7 +204,7 @@ def test_11_step_end_to_end_demonstration_workflow():
     placement_dash = placement_dash_res.json()
     assert placement_dash["role"] == "placement_officer"
     assert len(placement_dash["summary_cards"]) >= 4
-    
+
     opps_res = client.get("/api/v1/placement/opportunities", headers={"Authorization": f"Bearer {placement_token}"})
     assert opps_res.status_code == 200
     opps = opps_res.json()

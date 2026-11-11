@@ -1,77 +1,96 @@
 from app.core.database import Base
-from app.models.base import TimestampMixin
-from app.models.user import User, Role, UserRole
-from app.models.department import Department
 from app.models.academic import (
-    Semester,
-    Subject,
     FacultyCourseAssignment,
-    StudentSemesterRecord,
-    SubjectResult,
-    SubjectAttendance,
+    Semester,
     StudentAssessment,
-)
-from app.models.profile import Student, Faculty, Mentor, StudentMentorAssignment
-from app.models.audit import AuditLog
-from app.models.system import SystemSetting
-from app.models.student_intelligence import (
-    Skill,
-    StudentSkill,
-    Certification,
-    Project,
-    Internship,
-    Hackathon,
-    ImportJob,
-    ImportError,
-    SkillCategory,
-)
-from app.models.risk import (
-    RiskRule,
-    RiskAlert,
-    RiskEvaluation,
-    RiskAlertHistory,
-    AlertAssignment,
-    InAppNotification,
-)
-from app.models.recommendation import (
-    RecommendationCatalogue,
-    RecommendationResource,
-    Recommendation,
-    RecommendationProgress,
-    RecommendationFeedback,
-)
-from app.models.placement import (
-    SkillEvidence,
-    CareerRole,
-    RoleSkill,
-    PlacementOpportunity,
-    OpportunityRequirement,
-    StudentApplication,
+    StudentSemesterRecord,
+    Subject,
+    SubjectAttendance,
+    SubjectResult,
 )
 from app.models.ai_assistant import (
-    Document,
-    DocumentChunk,
-    DocumentAccessRule,
-    Conversation,
-    Message,
-    ConversationFeedback,
-    DocumentCategory,
-    DocumentAccessPermission,
     AssistantMode,
+    Conversation,
+    ConversationFeedback,
+    Document,
+    DocumentAccessPermission,
+    DocumentAccessRule,
+    DocumentCategory,
+    DocumentChunk,
+    Message,
     MessageRole,
 )
+from app.models.audit import AuditLog
+from app.models.base import TimestampMixin
+from app.models.department import Department
 from app.models.intervention import (
     Intervention,
-    InterventionNote,
     InterventionFollowup,
-    Notification,
-    NotificationPreference,
-    ReportExport,
+    InterventionNote,
     InterventionStatus,
     InterventionType,
+    Notification,
+    NotificationPreference,
     NotificationType,
+    ReportExport,
     ReportType,
 )
+from app.models.legal import ContactMessage, LegalAcceptance, LegalDocument
+from app.models.placement import (
+    CareerRole,
+    OpportunityRequirement,
+    PlacementOpportunity,
+    RoleSkill,
+    SkillEvidence,
+    StudentApplication,
+)
+from app.models.platform import (
+    ALL_MODULES,
+    AccountProvisioningRequest,
+    AuthToken,
+    EmailMessage,
+    EmployeeAssignment,
+    EmployeeProfile,
+    Enquiry,
+    EnquiryActivity,
+    EnquiryStatus,
+    Invitation,
+    ProvisioningStatus,
+    StaffStudentAccess,
+    StudentDataAccessGrant,
+    TenantStatus,
+    University,
+    UniversityDomain,
+)
+from app.models.profile import Faculty, Mentor, Student, StudentMentorAssignment
+from app.models.recommendation import (
+    Recommendation,
+    RecommendationCatalogue,
+    RecommendationFeedback,
+    RecommendationProgress,
+    RecommendationResource,
+)
+from app.models.risk import (
+    AlertAssignment,
+    InAppNotification,
+    RiskAlert,
+    RiskAlertHistory,
+    RiskEvaluation,
+    RiskRule,
+)
+from app.models.student_intelligence import (
+    Certification,
+    Hackathon,
+    ImportError,
+    ImportJob,
+    Internship,
+    Project,
+    Skill,
+    SkillCategory,
+    StudentSkill,
+)
+from app.models.system import SystemSetting
+from app.models.user import PLATFORM_ROLES, UNIVERSITY_ROLES, PlatformRole, Role, User, UserRole
 
 __all__ = [
     "Base",
@@ -79,6 +98,19 @@ __all__ = [
     "User",
     "Role",
     "UserRole",
+    "PlatformRole",
+    "University",
+    "UniversityDomain",
+    "EmployeeProfile",
+    "EmployeeAssignment",
+    "StudentDataAccessGrant",
+    "Enquiry",
+    "EnquiryActivity",
+    "Invitation",
+    "AuthToken",
+    "EmailMessage",
+    "AccountProvisioningRequest",
+    "StaffStudentAccess",
     "Department",
     "Semester",
     "Subject",
@@ -139,4 +171,13 @@ __all__ = [
     "InterventionType",
     "NotificationType",
     "ReportType",
+    "UNIVERSITY_ROLES",
+    "PLATFORM_ROLES",
+    "EnquiryStatus",
+    "ProvisioningStatus",
+    "TenantStatus",
+    "ALL_MODULES",
+    "ContactMessage",
+    "LegalAcceptance",
+    "LegalDocument",
 ]

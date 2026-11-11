@@ -1,23 +1,24 @@
-import pytest
 from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
 
-STUDENT_EMAIL = "student@smartcampus.edu"
+STUDENT_EMAIL = "student@reva-demo.example"
 STUDENT_PASS = "StudentPass123!"
 
-ADMIN_EMAIL = "admin@smartcampus.edu"
+ADMIN_EMAIL = "admin@reva-demo.example"
 ADMIN_PASS = "AdminPass123!"
 
-FACULTY_EMAIL = "faculty@smartcampus.edu"
+FACULTY_EMAIL = "faculty@reva-demo.example"
 FACULTY_PASS = "FacultyPass123!"
 
-MENTOR_EMAIL = "mentor@smartcampus.edu"
+MENTOR_EMAIL = "mentor@reva-demo.example"
 MENTOR_PASS = "MentorPass123!"
 
-PLACEMENT_EMAIL = "placement@smartcampus.edu"
+PLACEMENT_EMAIL = "placement@reva-demo.example"
 PLACEMENT_PASS = "PlacementPass123!"
 
 

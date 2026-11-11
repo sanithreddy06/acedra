@@ -1,20 +1,25 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Text, JSON
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
+
+from app.core.clock import utcnow
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
-class RiskRule(Base, TimestampMixin):
+class RiskRule(Base, TimestampMixin, TenantMixin):
     __tablename__ = "risk_rules"
+    __table_args__ = (UniqueConstraint("university_id", "code", name="uq_risk_rules_tenant_code"),)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), nullable=False)
-    code = Column(String(50), unique=True, index=True, nullable=False)
+    code = Column(String(50), index=True, nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(50), nullable=False)  # ATTENDANCE, ASSESSMENT, ACADEMIC, BACKLOG, COMPOSITE
     severity = Column(String(20), default="MODERATE", nullable=False)  # NORMAL, MODERATE, HIGH, CRITICAL
-    indicator_type = Column(String(50), nullable=False)  # attendance_percentage, assessment_percentage, sgpa_drop, backlog_count, missing_assessments, composite
+    indicator_type = Column(
+        String(50), nullable=False
+    )  # attendance_percentage, assessment_percentage, sgpa_drop, backlog_count, missing_assessments, composite
     operator = Column(String(10), default="<", nullable=False)  # <, <=, >, >=, ==
     threshold_value = Column(Float, nullable=False)
     conditions_config = Column(JSON, nullable=True)  # custom multi-parameter rules
@@ -27,7 +32,7 @@ class RiskRule(Base, TimestampMixin):
     created_by = relationship("User", foreign_keys=[created_by_id])
 
 
-class RiskAlert(Base, TimestampMixin):
+class RiskAlert(Base, TimestampMixin, TenantMixin):
     __tablename__ = "risk_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -35,14 +40,16 @@ class RiskAlert(Base, TimestampMixin):
     rule_id = Column(Integer, ForeignKey("risk_rules.id", ondelete="CASCADE"), nullable=False, index=True)
     evaluation_id = Column(Integer, ForeignKey("risk_evaluations.id", ondelete="SET NULL"), nullable=True, index=True)
     severity = Column(String(20), nullable=False)  # NORMAL, MODERATE, HIGH, CRITICAL
-    status = Column(String(30), default="FLAGGED", nullable=False)  # FLAGGED, ACKNOWLEDGED, UNDER_REVIEW, RESOLVED, DISMISSED
+    status = Column(
+        String(30), default="FLAGGED", nullable=False
+    )  # FLAGGED, ACKNOWLEDGED, UNDER_REVIEW, RESOLVED, DISMISSED
     observed_value = Column(Float, nullable=False)
     observed_display = Column(String(100), nullable=True)
     threshold_value = Column(Float, nullable=False)
     threshold_display = Column(String(100), nullable=True)
     academic_period = Column(String(100), nullable=True)
     subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
-    detected_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    detected_date = Column(DateTime, default=utcnow, nullable=False)
     is_system_generated = Column(Boolean, default=True, nullable=False)
     ai_explanation = Column(Text, nullable=False)
     suggested_action = Column(String(255), nullable=True)
@@ -59,11 +66,16 @@ class RiskAlert(Base, TimestampMixin):
     subject = relationship("Subject")
     assigned_mentor = relationship("Mentor")
     resolved_by = relationship("User", foreign_keys=[resolved_by_id])
-    history = relationship("RiskAlertHistory", back_populates="alert", cascade="all, delete-orphan", order_by="desc(RiskAlertHistory.created_at)")
+    history = relationship(
+        "RiskAlertHistory",
+        back_populates="alert",
+        cascade="all, delete-orphan",
+        order_by="desc(RiskAlertHistory.created_at)",
+    )
     assignments = relationship("AlertAssignment", back_populates="alert", cascade="all, delete-orphan")
 
 
-class RiskEvaluation(Base, TimestampMixin):
+class RiskEvaluation(Base, TimestampMixin, TenantMixin):
     __tablename__ = "risk_evaluations"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -84,12 +96,14 @@ class RiskEvaluation(Base, TimestampMixin):
     alerts = relationship("RiskAlert", back_populates="evaluation")
 
 
-class RiskAlertHistory(Base, TimestampMixin):
+class RiskAlertHistory(Base, TimestampMixin, TenantMixin):
     __tablename__ = "risk_alert_history"
 
     id = Column(Integer, primary_key=True, index=True)
     alert_id = Column(Integer, ForeignKey("risk_alerts.id", ondelete="CASCADE"), nullable=False, index=True)
-    action = Column(String(50), nullable=False)  # FLAGGED, ACKNOWLEDGED, NOTE_ADDED, ASSIGNED, STATUS_CHANGED, RESOLVED, REOPENED
+    action = Column(
+        String(50), nullable=False
+    )  # FLAGGED, ACKNOWLEDGED, NOTE_ADDED, ASSIGNED, STATUS_CHANGED, RESOLVED, REOPENED
     old_status = Column(String(30), nullable=True)
     new_status = Column(String(30), nullable=True)
     notes = Column(Text, nullable=True)
@@ -100,14 +114,14 @@ class RiskAlertHistory(Base, TimestampMixin):
     performed_by = relationship("User", foreign_keys=[performed_by_id])
 
 
-class AlertAssignment(Base, TimestampMixin):
+class AlertAssignment(Base, TimestampMixin, TenantMixin):
     __tablename__ = "alert_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
     alert_id = Column(Integer, ForeignKey("risk_alerts.id", ondelete="CASCADE"), nullable=False, index=True)
     mentor_id = Column(Integer, ForeignKey("mentors.id", ondelete="CASCADE"), nullable=False, index=True)
     assigned_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    assigned_at = Column(DateTime, default=utcnow, nullable=False)
     notes = Column(Text, nullable=True)
     status = Column(String(30), default="ACTIVE", nullable=False)  # ACTIVE, COMPLETED, REASSIGNED
 
@@ -117,14 +131,16 @@ class AlertAssignment(Base, TimestampMixin):
     assigned_by = relationship("User", foreign_keys=[assigned_by_id])
 
 
-class InAppNotification(Base, TimestampMixin):
+class InAppNotification(Base, TimestampMixin, TenantMixin):
     __tablename__ = "in_app_notifications"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(150), nullable=False)
     message = Column(Text, nullable=False)
-    notification_type = Column(String(50), default="RISK_ALERT", nullable=False)  # RISK_ALERT, ALERT_ASSIGNED, ALERT_RESOLVED, SYSTEM
+    notification_type = Column(
+        String(50), default="RISK_ALERT", nullable=False
+    )  # RISK_ALERT, ALERT_ASSIGNED, ALERT_RESOLVED, SYSTEM
     severity = Column(String(20), default="INFO", nullable=False)  # INFO, WARNING, CRITICAL
     reference_id = Column(Integer, nullable=True)
     reference_type = Column(String(50), nullable=True)

@@ -1,6 +1,7 @@
 from datetime import date, datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # Student schemas
@@ -28,7 +29,7 @@ class StudentBase(BaseModel):
 class StudentCreate(StudentBase):
     full_name: str
     email: EmailStr
-    password: Optional[str] = "StudentPass123!"
+    password: Optional[str] = None  # ignored: accounts are activated by invitation
 
 
 class StudentUpdate(BaseModel):
@@ -83,37 +84,6 @@ class StudentProfileOut(BaseModel):
 
 
 # Academic records schemas
-class SemesterRecordOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    student_id: int
-    semester_id: int
-    semester_name: Optional[str] = None
-    semester_number: int
-    sgpa: float
-    credits_registered: int
-    credits_earned: int
-    backlogs_count: int
-    status: str
-
-
-class SubjectResultOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    student_id: int
-    subject_id: int
-    subject_code: Optional[str] = None
-    subject_name: Optional[str] = None
-    credits: Optional[int] = 3
-    semester_id: int
-    internal_marks: float
-    external_marks: float
-    total_marks: float
-    letter_grade: str
-    grade_point: float
-    is_backlog: bool
 
 
 # Attendance schemas
@@ -151,13 +121,6 @@ class StudentAssessmentOut(BaseModel):
 
 
 # Skills schemas
-class SkillOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    category: str
-    description: Optional[str] = None
 
 
 class StudentSkillOut(BaseModel):
@@ -261,20 +224,48 @@ class HackathonOut(BaseModel):
     project_title: Optional[str] = None
 
 
-class HackathonCreate(BaseModel):
-    event_name: str
-    organizer: str
-    year: int
-    achievement: str = "Participant"
-    project_title: Optional[str] = None
-
-
 # Comprehensive Individual Student Analytics Output
+class StudentMetricsOut(BaseModel):
+    """Headline indicators for one student, derived from their recorded results and attendance."""
+
+    cgpa: Optional[float] = None
+    calculated_attendance_percentage: Optional[float] = None
+    internal_assessment_average: Optional[float] = None
+    total_credits_earned: Optional[int] = None
+    total_backlogs: int = 0
+    total_skills_count: int = 0
+    certifications_count: int = 0
+    projects_count: int = 0
+    internships_count: int = 0
+    hackathons_count: int = 0
+
+
+class SgpaTrendPoint(BaseModel):
+    semester: str
+    semester_number: int
+    sgpa: float
+    credits_registered: int
+    credits_earned: int
+    backlogs: int
+    status: str
+
+
+class SubjectPerformanceOut(BaseModel):
+    subject_code: str
+    subject_name: str
+    internal_marks: float
+    external_marks: float
+    total_marks: float
+    letter_grade: str
+    grade_point: float
+    is_backlog: bool
+
+
 class StudentAnalyticsOut(BaseModel):
     student_profile: StudentProfileOut
-    metrics: Dict[str, Any]  # cgpa, calculated_attendance_pct, internal_avg, backlogs, credits_earned
-    sgpa_trend: List[Dict[str, Any]]
-    subject_performance: List[Dict[str, Any]]
+    metrics: StudentMetricsOut
+    sgpa_trend: List[SgpaTrendPoint]
+    subject_performance: List[SubjectPerformanceOut]
     attendance_breakdown: List[SubjectAttendanceOut]
     assessment_history: List[StudentAssessmentOut]
     skills_by_category: Dict[str, List[StudentSkillOut]]
@@ -285,24 +276,88 @@ class StudentAnalyticsOut(BaseModel):
 
 
 # Faculty & Admin Analytics Outputs
+class AssignedCourseOut(BaseModel):
+    assignment_id: int
+    subject_code: str
+    subject_name: str
+    section: str
+    academic_year: Optional[str] = None
+
+
+class CohortStudentOut(BaseModel):
+    id: int
+    name: str
+    usn: str
+    roll_number: str
+    semester: int
+    section: str
+    cgpa: float
+    attendance: float
+    status: str
+
+
 class FacultyAnalyticsOut(BaseModel):
-    faculty_id: int
+    faculty_id: Optional[int] = None
     faculty_name: str
-    department_name: str
-    assigned_courses: List[Dict[str, Any]]
+    department_name: Optional[str] = None
+    assigned_courses: List[AssignedCourseOut]
     total_assigned_students: int
     average_cohort_attendance: float
     average_cohort_marks: float
-    students_summary: List[Dict[str, Any]]
+    students_summary: List[CohortStudentOut]
+    # False when the caller has no faculty profile yet: nothing is taught, so the lists are empty.
+    profile_configured: bool = True
+
+
+class InstitutionalStatsOut(BaseModel):
+    total_students: int
+    active_students: int
+    total_faculty: int
+    total_departments: int
+    campus_average_cgpa: float
+    campus_average_attendance: float
+
+
+class DepartmentStatsOut(BaseModel):
+    department_code: str
+    department_name: str
+    total_students: int
+    average_cgpa: float
+    average_attendance: float
+    at_risk_count: int
+    hod_name: Optional[str] = None
+
+
+class SemesterStatsOut(BaseModel):
+    semester: str  # label from the tenant's academic structure, e.g. "Term 4"
+    semester_number: int
+    student_count: int
+    average_cgpa: float
+    average_attendance: float
+
+
+class ImportBatchOut(BaseModel):
+    id: int
+    filename: str
+    type: str
+    status: str
+    success: int
+    failed: int
+    date: str
+
+
+class ImportStatsOut(BaseModel):
+    total_import_batches: int
+    recent_batches: List[ImportBatchOut]
 
 
 class AdminAnalyticsOut(BaseModel):
-    institutional_stats: Dict[str, Any]
-    department_wise_stats: List[Dict[str, Any]]
-    semester_wise_performance: List[Dict[str, Any]]
+    institutional_stats: InstitutionalStatsOut
+    department_wise_stats: List[DepartmentStatsOut]
+    semester_wise_performance: List[SemesterStatsOut]
     attendance_distribution: Dict[str, int]
     cgpa_distribution: Dict[str, int]
-    import_stats: Dict[str, Any]
+    import_stats: ImportStatsOut
 
 
 # Data Import schemas
@@ -321,14 +376,9 @@ class ImportJobOut(BaseModel):
     error_count: Optional[int] = 0
 
 
-class ImportErrorOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    job_id: int
+class ImportRowError(BaseModel):
     row_number: int
-    field_name: Optional[str] = None
-    raw_data: Optional[str] = None
+    row_data: Dict[str, Any]
     error_message: str
 
 
@@ -340,4 +390,4 @@ class ImportPreviewResult(BaseModel):
     invalid_rows_count: int
     columns_detected: List[str]
     preview_rows: List[Dict[str, Any]]
-    errors: List[Dict[str, Any]]
+    errors: List[ImportRowError]

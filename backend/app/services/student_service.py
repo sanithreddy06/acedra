@@ -1,51 +1,112 @@
-import io
+"""Student intelligence & analytics (module 1): profiles, academic records, analytics and CSV/Excel import."""
 import csv
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import date, datetime
-import openpyxl
-from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, and_
-from fastapi import HTTPException, status, UploadFile
+import io
+import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
-from app.core.security import get_password_hash
-from app.models.user import User, UserRole, Role
-from app.models.department import Department
+import openpyxl
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import Session
+
+from app.core.access import faculty_student_ids
+from app.core.clock import utcnow
 from app.models.academic import (
-    Semester,
-    Subject,
     FacultyCourseAssignment,
-    StudentSemesterRecord,
-    SubjectResult,
-    SubjectAttendance,
+    Semester,
     StudentAssessment,
+    StudentSemesterRecord,
+    Subject,
+    SubjectAttendance,
+    SubjectResult,
 )
-from app.models.profile import Student, Faculty, Mentor, StudentMentorAssignment
+from app.models.department import Department
+from app.models.platform import DEFAULT_ACADEMIC_STRUCTURE, University
+from app.models.profile import Faculty, Student
 from app.models.student_intelligence import (
+    Certification,
+    ImportError,
+    ImportJob,
+    Internship,
+    Project,
     Skill,
     StudentSkill,
-    Certification,
-    Project,
-    Internship,
-    Hackathon,
-    ImportJob,
-    ImportError,
-    SkillCategory,
 )
-from app.models.audit import AuditLog
+from app.models.user import User, UserRole
+from app.repositories.audit_repo import AuditRepository
 from app.schemas.student_intelligence import (
-    StudentCreate,
-    StudentUpdate,
-    StudentProfileOut,
-    StudentAnalyticsOut,
-    FacultyAnalyticsOut,
     AdminAnalyticsOut,
-    ImportPreviewResult,
-    StudentSkillCreate,
     CertificationCreate,
-    ProjectCreate,
+    FacultyAnalyticsOut,
+    ImportPreviewResult,
     InternshipCreate,
-    HackathonCreate,
+    ProjectCreate,
+    StudentAnalyticsOut,
+    StudentCreate,
+    StudentProfileOut,
+    StudentSkillCreate,
+    StudentUpdate,
 )
+from app.services.invitation_service import InvitationService
+
+logger = logging.getLogger(__name__)
+
+IMPORT_TYPES = ("students", "academic_records", "attendance")
+COLUMN_ALIASES = {"department_code": "department", "attendance_percentage": "attendance", "name": "full_name",
+                  "grade_letter": "grade", "letter_grade": "grade"}
+# Letter grade -> grade point on the 10-point scale used by the bundled data; F is a backlog.
+GRADE_POINTS = {"O": 10.0, "A+": 9.0, "A": 8.0, "B+": 7.0, "B": 6.0, "C": 5.0, "P": 4.0, "F": 0.0}
+
+
+@dataclass
+class _ImportContext:
+    university: Any
+    departments: Dict[str, int]
+    current_term: Optional[Semester]
+
+
+def _text(row: Dict[str, Any], key: str) -> str:
+    value = row.get(key)
+    return "" if value is None else str(value).strip()
+
+
+def _int(row: Dict[str, Any], key: str, *, required: bool = False, default: Optional[int] = None) -> Optional[int]:
+    raw = _text(row, key)
+    if not raw:
+        if required:
+            raise ValueError(f"{key} is required.")
+        return default
+    try:
+        return int(float(raw))
+    except ValueError:
+        raise ValueError(f"{key} must be a whole number (got '{raw}').") from None
+
+
+def _number_errors(row: Dict[str, Any], *, ints=(), floats=(), required=()) -> List[str]:
+    """Preview-time checks mirroring what the import handlers will accept."""
+    errors = []
+    for key in ints:
+        try:
+            _int(row, key, required=key in required)
+        except ValueError as exc:
+            errors.append(str(exc))
+    for key in floats:
+        try:
+            _float(row, key, default=0.0)
+        except ValueError as exc:
+            errors.append(str(exc))
+    return errors
+
+
+def _float(row: Dict[str, Any], key: str, *, default: float) -> float:
+    raw = _text(row, key)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(f"{key} must be a number (got '{raw}').") from None
 
 
 class StudentIntelligenceService:
@@ -66,18 +127,10 @@ class StudentIntelligenceService:
     ) -> Tuple[List[StudentProfileOut], int]:
         query = self.db.query(Student).join(User, Student.user_id == User.id)
 
-        # Security scoping: if student, only view self
+        # Who appears here is decided by the session's student scope (core/access.py), the same rule that
+        # governs opening a record directly; this list adds no extra filters of its own.
         if current_user.role == UserRole.STUDENT.value:
             query = query.filter(Student.user_id == current_user.id)
-        # If faculty, can view students from their department or assigned sections
-        elif current_user.role == UserRole.FACULTY.value:
-            if current_user.department_id:
-                query = query.filter(Student.department_id == current_user.department_id)
-        # If mentor, can view their mentees or department
-        elif current_user.role == UserRole.MENTOR.value:
-            if current_user.mentor_profile:
-                # Can view all mentees, or departmental students
-                pass
 
         if search:
             search_term = f"%{search.lower()}%"
@@ -113,12 +166,11 @@ class StudentIntelligenceService:
             raise HTTPException(status_code=404, detail=f"Student ID {student_id} not found.")
 
         # RBAC verification: Student can only view their own profile
-        if current_user.role == UserRole.STUDENT.value:
-            if student.user_id != current_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access forbidden: Students are only authorized to view their own personal records."
-                )
+        if current_user.role == UserRole.STUDENT.value and student.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: Students are only authorized to view their own personal records.",
+            )
 
         return self._format_student_profile(student)
 
@@ -127,33 +179,27 @@ class StudentIntelligenceService:
         if current_user.role != UserRole.ADMIN.value:
             raise HTTPException(status_code=403, detail="Only administrators can create student accounts.")
 
-        # Check duplicate email
-        existing_user = self.db.query(User).filter(User.email == data.email.lower()).first()
-        if existing_user:
-            raise HTTPException(status_code=400, detail=f"User with email '{data.email}' already exists.")
-
         # Check duplicate USN or Roll Number
-        existing_student = self.db.query(Student).filter(
-            or_(Student.usn == data.usn.upper(), Student.roll_number == data.roll_number.upper())
-        ).first()
+        existing_student = (
+            self.db.query(Student)
+            .filter(or_(Student.usn == data.usn.upper(), Student.roll_number == data.roll_number.upper()))
+            .first()
+        )
         if existing_student:
-            raise HTTPException(status_code=400, detail=f"Student with USN '{data.usn}' or Roll Number '{data.roll_number}' already exists.")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Student with USN '{data.usn}' or Roll Number '{data.roll_number}' already exists.",
+            )
 
-        student_role = self.db.query(Role).filter(Role.name == UserRole.STUDENT.value).first()
-        role_id = student_role.id if student_role else None
-
-        user = User(
-            email=data.email.lower(),
-            hashed_password=get_password_hash(data.password or "StudentPass123!"),
+        # No default passwords: the student receives an invitation and sets their own credentials.
+        user, _, _ = InvitationService(self.db).create_user_with_invitation(
+            email=data.email,
             full_name=data.full_name,
             role=UserRole.STUDENT.value,
-            role_id=role_id,
+            university=self._university(current_user),
+            invited_by=current_user,
             department_id=data.department_id,
-            is_active=True,
-            is_verified=True,
         )
-        self.db.add(user)
-        self.db.flush()
 
         srn_val = data.srn.upper() if data.srn else f"SRN-{data.usn.upper()}"
 
@@ -190,7 +236,7 @@ class StudentIntelligenceService:
             user_id=current_user.id,
             resource_type="student",
             resource_id=str(student.id),
-            details={"usn": student.usn, "email": user.email, "srn": student.srn}
+            details={"usn": student.usn, "email": user.email, "srn": student.srn},
         )
 
         return self._format_student_profile(student)
@@ -228,20 +274,19 @@ class StudentIntelligenceService:
             user_id=current_user.id,
             resource_type="student",
             resource_id=str(student.id),
-            details={"fields_updated": list(update_dict.keys())}
+            details={"fields_updated": list(update_dict.keys())},
         )
 
         # Trigger automatic risk evaluation on student record update
         try:
             from app.services.risk_service import RiskService
+
             RiskService.evaluate_risk(
-                db=self.db,
-                student_id=student.id,
-                run_type="STUDENT_UPDATE",
-                user_id=current_user.id
+                db=self.db, student_id=student.id, run_type="STUDENT_UPDATE", user_id=current_user.id
             )
-        except Exception as e:
-            logger.warning(f"Failed to auto-evaluate risk on student update: {e}")
+        except Exception:
+            # The profile update is already committed; a failed re-evaluation must not turn it into an error.
+            logger.warning("Automatic risk evaluation failed after updating student %s", student.id, exc_info=True)
 
         return self._format_student_profile(student)
 
@@ -258,9 +303,12 @@ class StudentIntelligenceService:
         profile_out = self._format_student_profile(student)
 
         # 1. Semester-wise academic progress & SGPA progression
-        sem_records = self.db.query(StudentSemesterRecord).filter(
-            StudentSemesterRecord.student_id == student.id
-        ).order_by(StudentSemesterRecord.semester_number.asc()).all()
+        sem_records = (
+            self.db.query(StudentSemesterRecord)
+            .filter(StudentSemesterRecord.student_id == student.id)
+            .order_by(StudentSemesterRecord.semester_number.asc())
+            .all()
+        )
 
         sgpa_trend = [
             {
@@ -276,9 +324,7 @@ class StudentIntelligenceService:
         ]
 
         # 2. Subject Results for current / latest semester
-        results = self.db.query(SubjectResult).filter(
-            SubjectResult.student_id == student.id
-        ).all()
+        results = self.db.query(SubjectResult).filter(SubjectResult.student_id == student.id).all()
 
         subject_performance = [
             {
@@ -295,9 +341,7 @@ class StudentIntelligenceService:
         ]
 
         # 3. Attendance Breakdown (calculated from raw counts)
-        att_records = self.db.query(SubjectAttendance).filter(
-            SubjectAttendance.student_id == student.id
-        ).all()
+        att_records = self.db.query(SubjectAttendance).filter(SubjectAttendance.student_id == student.id).all()
 
         attendance_breakdown = []
         total_classes_sum = 0
@@ -307,18 +351,20 @@ class StudentIntelligenceService:
             total_classes_sum += a.total_classes
             attended_classes_sum += a.attended_classes
             pct = round((a.attended_classes / a.total_classes * 100.0), 1) if a.total_classes > 0 else 100.0
-            attendance_breakdown.append({
-                "id": a.id,
-                "student_id": a.student_id,
-                "subject_id": a.subject_id,
-                "subject_code": a.subject.code if a.subject else "N/A",
-                "subject_name": a.subject.name if a.subject else "N/A",
-                "semester_id": a.semester_id,
-                "total_classes": a.total_classes,
-                "attended_classes": a.attended_classes,
-                "missed_classes": max(0, a.total_classes - a.attended_classes),
-                "attendance_percentage": pct,
-            })
+            attendance_breakdown.append(
+                {
+                    "id": a.id,
+                    "student_id": a.student_id,
+                    "subject_id": a.subject_id,
+                    "subject_code": a.subject.code if a.subject else "N/A",
+                    "subject_name": a.subject.name if a.subject else "N/A",
+                    "semester_id": a.semester_id,
+                    "total_classes": a.total_classes,
+                    "attended_classes": a.attended_classes,
+                    "missed_classes": max(0, a.total_classes - a.attended_classes),
+                    "attendance_percentage": pct,
+                }
+            )
 
         calculated_overall_attendance = (
             round((attended_classes_sum / total_classes_sum * 100.0), 1)
@@ -327,9 +373,12 @@ class StudentIntelligenceService:
         )
 
         # 4. Continuous Assessments & CIA average
-        assessments = self.db.query(StudentAssessment).filter(
-            StudentAssessment.student_id == student.id
-        ).order_by(StudentAssessment.created_at.desc()).all()
+        assessments = (
+            self.db.query(StudentAssessment)
+            .filter(StudentAssessment.student_id == student.id)
+            .order_by(StudentAssessment.created_at.desc())
+            .all()
+        )
 
         assessment_history = [
             {
@@ -356,9 +405,7 @@ class StudentIntelligenceService:
         )
 
         # 5. Skills categorized for Module 4 compatibility
-        student_skills = self.db.query(StudentSkill).filter(
-            StudentSkill.student_id == student.id
-        ).join(Skill).all()
+        student_skills = self.db.query(StudentSkill).filter(StudentSkill.student_id == student.id).join(Skill).all()
 
         skills_by_category: Dict[str, List[Any]] = {
             "programming": [],
@@ -371,14 +418,16 @@ class StudentIntelligenceService:
 
         for sk in student_skills:
             cat = sk.skill.category if sk.skill and sk.skill.category in skills_by_category else "tool"
-            skills_by_category[cat].append({
-                "id": sk.id,
-                "skill_id": sk.skill_id,
-                "skill_name": sk.skill.name if sk.skill else "Skill",
-                "category": cat,
-                "proficiency_level": sk.proficiency_level,
-                "is_verified": sk.is_verified,
-            })
+            skills_by_category[cat].append(
+                {
+                    "id": sk.id,
+                    "skill_id": sk.skill_id,
+                    "skill_name": sk.skill.name if sk.skill else "Skill",
+                    "category": cat,
+                    "proficiency_level": sk.proficiency_level,
+                    "is_verified": sk.is_verified,
+                }
+            )
 
         # 6. Certifications, Projects, Internships, Hackathons
         certs = [
@@ -471,19 +520,26 @@ class StudentIntelligenceService:
 
     # 6. Faculty Analytics (Authorized Assigned Students)
     def get_faculty_analytics(self, current_user: User) -> FacultyAnalyticsOut:
+        """Teaching view for the caller's own faculty profile: their sections and the students in them.
+
+        Without a faculty profile there is nothing taught, so the response is an explicit empty state
+        (``profile_configured = False``) rather than another department's data.
+        """
         if current_user.role not in [UserRole.FACULTY.value, UserRole.ADMIN.value]:
             raise HTTPException(status_code=403, detail="Authorized to Faculty and Administrators only.")
 
         faculty = current_user.faculty_profile
-        faculty_id = faculty.id if faculty else 1
-        faculty_name = current_user.full_name
-        dept_name = current_user.department.name if current_user.department else "Engineering"
+        dept = current_user.department or (faculty.department if faculty else None)
+        if faculty is None:
+            return FacultyAnalyticsOut(
+                faculty_id=None, faculty_name=current_user.full_name, department_name=dept.name if dept else None,
+                assigned_courses=[], total_assigned_students=0, average_cohort_attendance=0.0,
+                average_cohort_marks=0.0, students_summary=[], profile_configured=False,
+            )
 
-        # Assigned subjects
-        assignments = self.db.query(FacultyCourseAssignment).filter(
-            FacultyCourseAssignment.faculty_id == faculty_id
-        ).all()
-
+        assignments = (
+            self.db.query(FacultyCourseAssignment).filter(FacultyCourseAssignment.faculty_id == faculty.id).all()
+        )
         assigned_courses = [
             {
                 "assignment_id": a.id,
@@ -495,9 +551,15 @@ class StudentIntelligenceService:
             for a in assignments
         ]
 
-        # Department cohort query
-        dept_id = current_user.department_id or (faculty.department_id if faculty else 1)
-        students = self.db.query(Student).filter(Student.department_id == dept_id).all()
+        # The cohort is exactly the students this faculty member is authorised to see.
+        cohort_ids = faculty_student_ids(self.db, current_user, faculty)
+        students = (
+            self.db.query(Student).filter(Student.id.in_(cohort_ids)).order_by(Student.attendance_percentage).all()
+            if cohort_ids else []
+        )
+        faculty_id = faculty.id
+        faculty_name = current_user.full_name
+        dept_name = dept.name if dept else None
 
         total_students = len(students)
         avg_att = (sum(s.attendance_percentage for s in students) / total_students) if total_students > 0 else 0.0
@@ -515,7 +577,7 @@ class StudentIntelligenceService:
                 "attendance": s.attendance_percentage,
                 "status": s.status,
             }
-            for s in students[:20]
+            for s in students[:20]  # lowest attendance first
         ]
 
         return FacultyAnalyticsOut(
@@ -552,34 +614,27 @@ class StudentIntelligenceService:
             d_avg_att = sum(s.attendance_percentage for s in d_students) / d_count if d_count > 0 else 0.0
             at_risk = sum(1 for s in d_students if s.attendance_percentage < 75.0 or s.cgpa < 6.0)
 
-            dept_stats.append({
-                "department_code": d.code,
-                "department_name": d.name,
-                "total_students": d_count,
-                "average_cgpa": round(d_avg_cgpa, 2),
-                "average_attendance": round(d_avg_att, 1),
-                "at_risk_count": at_risk,
-                "hod_name": d.hod_name,
-            })
+            dept_stats.append(
+                {
+                    "department_code": d.code,
+                    "department_name": d.name,
+                    "total_students": d_count,
+                    "average_cgpa": round(d_avg_cgpa, 2),
+                    "average_attendance": round(d_avg_att, 1),
+                    "at_risk_count": at_risk,
+                    "hod_name": d.hod_name,
+                }
+            )
 
-        # Semester-wise statistics
-        sem_stats = []
-        for sem in [1, 3, 5, 7]:
-            sem_students = self.db.query(Student).filter(Student.current_semester == sem).all()
-            s_count = len(sem_students)
-            s_cgpa = sum(s.cgpa for s in sem_students) / s_count if s_count > 0 else 0.0
-            s_att = sum(s.attendance_percentage for s in sem_students) / s_count if s_count > 0 else 0.0
-            sem_stats.append({
-                "semester": f"Semester {sem}",
-                "student_count": s_count,
-                "average_cgpa": round(s_cgpa, 2),
-                "average_attendance": round(s_att, 1),
-            })
+        # Term-wise statistics, following this university's configured academic structure
+        sem_stats = self._term_breakdown(current_user)
 
         # Attendance Distribution
         att_dist = {
             "above_85": self.db.query(Student).filter(Student.attendance_percentage >= 85.0).count(),
-            "between_75_85": self.db.query(Student).filter(and_(Student.attendance_percentage >= 75.0, Student.attendance_percentage < 85.0)).count(),
+            "between_75_85": self.db.query(Student)
+            .filter(and_(Student.attendance_percentage >= 75.0, Student.attendance_percentage < 85.0))
+            .count(),
             "below_75_at_risk": self.db.query(Student).filter(Student.attendance_percentage < 75.0).count(),
         }
 
@@ -609,7 +664,7 @@ class StudentIntelligenceService:
                     "date": j.created_at.strftime("%b %d, %H:%M"),
                 }
                 for j in recent_jobs
-            ]
+            ],
         }
 
         institutional_stats = {
@@ -630,6 +685,43 @@ class StudentIntelligenceService:
             import_stats=import_stats,
         )
 
+    def _term_breakdown(self, current_user: User) -> List[Dict[str, Any]]:
+        """Students and averages for every term of the university's programme.
+
+        The number of terms is ``terms_per_year × programme_duration_years`` from the tenant's academic
+        structure (defaults in ``DEFAULT_ACADEMIC_STRUCTURE``), labelled with its ``term_label``. Terms with
+        no students are included so the structure is visible; any recorded term beyond the configured range
+        is appended rather than hidden.
+        """
+        university = self.db.query(University).filter(University.id == current_user.university_id).first()
+        structure = {**DEFAULT_ACADEMIC_STRUCTURE, **((university.academic_structure if university else None) or {})}
+        label = str(structure.get("term_label") or "Semester")
+        try:
+            configured = int(structure["terms_per_year"]) * int(structure["programme_duration_years"])
+        except (TypeError, ValueError):
+            configured = 8
+        configured = max(1, min(configured, 24))
+
+        rows = (
+            self.db.query(Student.current_semester, func.count(Student.id), func.avg(Student.cgpa),
+                          func.avg(Student.attendance_percentage))
+            .group_by(Student.current_semester)
+            .all()
+        )
+        by_term = {term: (count, cgpa, att) for term, count, cgpa, att in rows if term is not None}
+        terms = sorted(set(range(1, configured + 1)) | set(by_term))
+        breakdown = []
+        for term in terms:
+            count, cgpa, att = by_term.get(term, (0, None, None))
+            breakdown.append({
+                "semester": f"{label} {term}",
+                "semester_number": term,
+                "student_count": count,
+                "average_cgpa": round(float(cgpa or 0.0), 2),
+                "average_attendance": round(float(att or 0.0), 1),
+            })
+        return breakdown
+
     # 8. Add Student Skill
     def add_student_skill(self, student_id: int, data: StudentSkillCreate, current_user: User) -> StudentSkill:
         student = self.db.query(Student).filter(Student.id == student_id).first()
@@ -647,10 +739,11 @@ class StudentIntelligenceService:
             self.db.flush()
 
         # Check existing student skill
-        existing = self.db.query(StudentSkill).filter(
-            StudentSkill.student_id == student.id,
-            StudentSkill.skill_id == skill.id
-        ).first()
+        existing = (
+            self.db.query(StudentSkill)
+            .filter(StudentSkill.student_id == student.id, StudentSkill.skill_id == skill.id)
+            .first()
+        )
 
         if existing:
             existing.proficiency_level = data.proficiency_level
@@ -658,10 +751,7 @@ class StudentIntelligenceService:
             return existing
 
         st_skill = StudentSkill(
-            student_id=student.id,
-            skill_id=skill.id,
-            proficiency_level=data.proficiency_level,
-            is_verified=False
+            student_id=student.id, skill_id=skill.id, proficiency_level=data.proficiency_level, is_verified=False
         )
         self.db.add(st_skill)
         self.db.commit()
@@ -679,7 +769,7 @@ class StudentIntelligenceService:
             expiry_date=data.expiry_date,
             credential_id=data.credential_id,
             credential_url=data.credential_url,
-            verification_status="Verified"
+            verification_status="Verified",
         )
         self.db.add(cert)
         self.db.commit()
@@ -696,7 +786,7 @@ class StudentIntelligenceService:
             role=data.role,
             github_url=data.github_url,
             live_url=data.live_url,
-            semester_number=data.semester_number
+            semester_number=data.semester_number,
         )
         self.db.add(proj)
         self.db.commit()
@@ -713,7 +803,7 @@ class StudentIntelligenceService:
             end_date=data.end_date,
             stipend=data.stipend,
             description=data.description,
-            status=data.status
+            status=data.status,
         )
         self.db.add(intern)
         self.db.commit()
@@ -721,7 +811,9 @@ class StudentIntelligenceService:
         return intern
 
     # 10. Data Import: Preview CSV/Excel
-    async def preview_import_file(self, file: UploadFile, import_type: str, current_user: User) -> ImportPreviewResult:
+    async def preview_import_file(
+        self, file: UploadFile, import_type: str, current_user: User, column_mapping: Optional[Dict[str, str]] = None
+    ) -> ImportPreviewResult:
         if current_user.role != UserRole.ADMIN.value:
             raise HTTPException(status_code=403, detail="Data import requires administrator privileges.")
 
@@ -731,19 +823,19 @@ class StudentIntelligenceService:
         if not any(filename.lower().endswith(ext) for ext in allowed_exts):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import."
+                detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import.",
             )
 
         content = await file.read()
         # Security: maximum 10MB file size limit
         if len(content) > 10 * 1024 * 1024:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File size exceeds maximum permitted limit (10MB)."
+                status_code=status.HTTP_400_BAD_REQUEST, detail="File size exceeds maximum permitted limit (10MB)."
             )
 
         is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
         rows, columns = self._parse_file_rows(content, is_excel)
+        rows, columns = self._apply_mapping(rows, columns, column_mapping)
 
         # Validate rows
         valid_rows = []
@@ -754,6 +846,8 @@ class StudentIntelligenceService:
 
         seen_in_batch_usn = set()
         seen_in_batch_email = set()
+        dept_codes = {d[0].upper() for d in self.db.query(Department.code).all()}
+        subject_codes = {c[0].upper() for c in self.db.query(Subject.code).all()}
 
         for idx, row in enumerate(rows, start=1):
             row_errors = []
@@ -785,6 +879,10 @@ class StudentIntelligenceService:
 
                 if not name:
                     row_errors.append("Missing required field: Full Name")
+                dept_code = _text(row, "department").upper()
+                if dept_code not in dept_codes:
+                    row_errors.append(f"Unknown department code '{dept_code or '(blank)'}'")
+                row_errors += _number_errors(row, ints=["semester"], required=["semester"], floats=["cgpa", "attendance"])
 
             elif import_type == "academic_records":
                 usn = str(row.get("usn", "")).strip().upper()
@@ -792,6 +890,12 @@ class StudentIntelligenceService:
                     row_errors.append("Missing USN")
                 elif usn not in existing_usns and usn not in seen_in_batch_usn:
                     row_errors.append(f"Student USN '{usn}' does not exist")
+                if _text(row, "subject_code").upper() not in subject_codes:
+                    row_errors.append(f"Subject '{_text(row, 'subject_code') or '(blank)'}' not found")
+                if _text(row, "grade").upper() not in GRADE_POINTS:
+                    row_errors.append(f"Unknown grade '{_text(row, 'grade') or '(blank)'}'")
+                row_errors += _number_errors(row, ints=["semester_number"], required=["semester_number"],
+                                             floats=["internal_marks", "external_marks", "total_marks"])
 
             elif import_type == "attendance":
                 usn = str(row.get("usn", "")).strip().upper()
@@ -799,6 +903,8 @@ class StudentIntelligenceService:
                     row_errors.append("Missing USN")
                 elif usn not in existing_usns:
                     row_errors.append(f"Student USN '{usn}' does not exist")
+                if _text(row, "subject_code").upper() not in subject_codes:
+                    row_errors.append(f"Subject '{_text(row, 'subject_code') or '(blank)'}' not found")
 
                 total = row.get("total_classes")
                 attended = row.get("attended_classes")
@@ -809,11 +915,13 @@ class StudentIntelligenceService:
                     row_errors.append("Classes counts must be valid integers")
 
             if row_errors:
-                errors.append({
-                    "row_number": idx,
-                    "row_data": row,
-                    "error_message": "; ".join(row_errors),
-                })
+                errors.append(
+                    {
+                        "row_number": idx,
+                        "row_data": row,
+                        "error_message": "; ".join(row_errors),
+                    }
+                )
             else:
                 valid_rows.append(row)
 
@@ -828,8 +936,110 @@ class StudentIntelligenceService:
             errors=errors[:20],
         )
 
+    # --- import row handlers (each raises ValueError with a message shown to the administrator) ---
+    def _import_student_row(self, row: Dict[str, Any], ctx: "_ImportContext", current_user: User) -> None:
+        """Create an invited (inactive) student account and profile. CGPA and attendance start empty
+        (0 and no recorded absences, as for manually created students) unless the file provides them."""
+        usn = _text(row, "usn").upper()
+        email = _text(row, "email").lower()
+        name = _text(row, "name") or _text(row, "full_name")
+        if not usn or not email or not name:
+            raise ValueError("usn, email and full_name are required.")
+        dept_code = _text(row, "department").upper()
+        if dept_code not in ctx.departments:
+            raise ValueError(f"Unknown department code '{dept_code or '(blank)'}'. "
+                             f"Known codes: {', '.join(sorted(ctx.departments)) or 'none — add departments first'}.")
+        semester = _int(row, "semester", required=True)
+        if self.db.query(Student).filter(Student.usn == usn).first():
+            raise ValueError(f"Student USN '{usn}' already exists.")
+        cgpa = _float(row, "cgpa", default=0.0)
+        attendance = _float(row, "attendance", default=100.0)
+        try:
+            user, _, _ = InvitationService(self.db).create_user_with_invitation(
+                email=email, full_name=name, role=UserRole.STUDENT.value, university=ctx.university,
+                invited_by=current_user, department_id=ctx.departments[dept_code],
+            )
+        except HTTPException as exc:
+            raise ValueError(str(exc.detail)) from exc
+        admission_year = _int(row, "admission_year", default=None)
+        batch_year = _int(row, "batch_year", default=None) or admission_year or utcnow().year
+        self.db.add(Student(
+            user_id=user.id,
+            roll_number=(_text(row, "roll_number") or f"R-{usn}").upper(),
+            usn=usn,
+            srn=(_text(row, "srn") or f"SRN-{usn}").upper(),
+            department_id=ctx.departments[dept_code],
+            current_semester=semester,
+            batch_year=batch_year,
+            admission_year=admission_year or batch_year,
+            section=(_text(row, "section") or "A").upper(),
+            status="Active",
+            cgpa=cgpa,
+            attendance_percentage=attendance,
+            placement_status="Eligible" if (cgpa >= 7.0 and attendance >= 75.0) else "Ineligible",
+        ))
+        self.db.flush()
+
+    def _import_attendance_row(self, row: Dict[str, Any], ctx: "_ImportContext", current_user: User) -> None:
+        """Record class attendance for one student and subject in the current term."""
+        student = self._student_by_usn(row)
+        subject = self._subject_by_code(row)
+        if ctx.current_term is None:
+            raise ValueError("No current term is configured; mark one term as current first.")
+        total = _int(row, "total_classes", required=True)
+        attended = _int(row, "attended_classes", required=True)
+        if total <= 0 or attended < 0 or attended > total:
+            raise ValueError(f"Attended ({attended}) must be between 0 and total classes ({total}).")
+        self.db.add(SubjectAttendance(student_id=student.id, subject_id=subject.id, semester_id=ctx.current_term.id,
+                                      total_classes=total, attended_classes=attended))
+
+    def _import_result_row(self, row: Dict[str, Any], ctx: "_ImportContext", current_user: User) -> None:
+        """Create or update a student's result for one subject in one term."""
+        student = self._student_by_usn(row)
+        subject = self._subject_by_code(row)
+        term_number = _int(row, "semester_number", required=True)
+        term = self.db.query(Semester).filter(Semester.semester_number == term_number).first()
+        if term is None:
+            raise ValueError(f"Term {term_number} is not configured for this university.")
+        internal = _float(row, "internal_marks", default=0.0)
+        external = _float(row, "external_marks", default=0.0)
+        total = _float(row, "total_marks", default=internal + external)
+        if not 0 <= total <= 100:
+            raise ValueError(f"total_marks must be between 0 and 100 (got {total}).")
+        grade = _text(row, "grade").upper()
+        if grade not in GRADE_POINTS:
+            raise ValueError(f"Unknown grade '{grade or '(blank)'}'. Use one of: {', '.join(GRADE_POINTS)}.")
+        result = self.db.query(SubjectResult).filter(
+            SubjectResult.student_id == student.id, SubjectResult.subject_id == subject.id,
+            SubjectResult.semester_id == term.id).first()
+        if result is None:
+            result = SubjectResult(student_id=student.id, subject_id=subject.id, semester_id=term.id)
+            self.db.add(result)
+        result.internal_marks = internal
+        result.external_marks = external
+        result.total_marks = total
+        result.letter_grade = grade
+        result.grade_point = GRADE_POINTS[grade]
+        result.is_backlog = grade == "F"
+
+    def _student_by_usn(self, row: Dict[str, Any]) -> Student:
+        usn = _text(row, "usn").upper()
+        student = self.db.query(Student).filter(Student.usn == usn).first() if usn else None
+        if student is None:
+            raise ValueError(f"Student USN '{usn or '(blank)'}' not found.")
+        return student
+
+    def _subject_by_code(self, row: Dict[str, Any]) -> Subject:
+        code = _text(row, "subject_code").upper()
+        subject = self.db.query(Subject).filter(Subject.code == code).first() if code else None
+        if subject is None:
+            raise ValueError(f"Subject '{code or '(blank)'}' not found.")
+        return subject
+
     # 11. Execute Batch Import
-    async def execute_import(self, file: UploadFile, import_type: str, current_user: User) -> ImportJob:
+    async def execute_import(
+        self, file: UploadFile, import_type: str, current_user: User, column_mapping: Optional[Dict[str, str]] = None
+    ) -> ImportJob:
         if current_user.role != UserRole.ADMIN.value:
             raise HTTPException(status_code=403, detail="Administrator privileges required.")
 
@@ -839,19 +1049,23 @@ class StudentIntelligenceService:
         if not any(filename.lower().endswith(ext) for ext in allowed_exts):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import."
+                detail=f"Invalid file format '{filename}'. Only CSV and Excel (.xlsx, .xls) files are accepted for import.",
             )
+
+        if import_type not in IMPORT_TYPES:
+            raise HTTPException(status_code=422, detail=f"Unknown import type '{import_type}'. "
+                                                        f"Use one of: {', '.join(IMPORT_TYPES)}.")
 
         content = await file.read()
         # Security: maximum 10MB file size limit
         if len(content) > 10 * 1024 * 1024:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File size exceeds maximum permitted limit (10MB)."
+                status_code=status.HTTP_400_BAD_REQUEST, detail="File size exceeds maximum permitted limit (10MB)."
             )
 
         is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
         rows, _ = self._parse_file_rows(content, is_excel)
+        rows, _ = self._apply_mapping(rows, _, column_mapping)
 
         job = ImportJob(
             filename=filename,
@@ -861,108 +1075,34 @@ class StudentIntelligenceService:
             total_rows=len(rows),
             successful_rows=0,
             failed_rows=0,
-            created_by=current_user.id
+            created_by=current_user.id,
         )
         self.db.add(job)
         self.db.flush()
 
-        student_role = self.db.query(Role).filter(Role.name == UserRole.STUDENT.value).first()
-        role_id = student_role.id if student_role else 1
-        default_dept = self.db.query(Department).first()
-        dept_map = {d.code.upper(): d.id for d in self.db.query(Department).all()}
+        ctx = _ImportContext(
+            university=self._university(current_user),
+            departments={d.code.upper(): d.id for d in self.db.query(Department).all()},
+            current_term=self.db.query(Semester).filter(Semester.is_current.is_(True)).first(),
+        )
+        handlers = {
+            "students": self._import_student_row,
+            "attendance": self._import_attendance_row,
+            "academic_records": self._import_result_row,
+        }
+        handle = handlers[import_type]
 
         successful = 0
         failed = 0
 
         for idx, row in enumerate(rows, start=1):
             try:
-                if import_type == "students":
-                    usn = str(row.get("usn", "")).strip().upper()
-                    email = str(row.get("email", "")).strip().lower()
-                    name = str(row.get("name", "")).strip() or str(row.get("full_name", "")).strip()
-                    dept_code = str(row.get("department", "CSE")).strip().upper()
-                    dept_id = dept_map.get(dept_code, default_dept.id if default_dept else 1)
-                    sem = int(row.get("semester", 5))
-                    sec = str(row.get("section", "A")).strip().upper()
-                    roll = str(row.get("roll_number", f"R-{usn}")).strip().upper()
-                    srn = str(row.get("srn", f"SRN-{usn}")).strip().upper()
-                    cgpa = float(row.get("cgpa", 8.0))
-                    att = float(row.get("attendance", 90.0))
-
-                    # Check existence
-                    if self.db.query(User).filter(User.email == email).first():
-                        raise ValueError(f"User email '{email}' already registered.")
-                    if self.db.query(Student).filter(Student.usn == usn).first():
-                        raise ValueError(f"Student USN '{usn}' already exists.")
-
-                    u = User(
-                        email=email,
-                        hashed_password=get_password_hash("StudentPass123!"),
-                        full_name=name,
-                        role=UserRole.STUDENT.value,
-                        role_id=role_id,
-                        department_id=dept_id,
-                        is_active=True,
-                        is_verified=True,
-                    )
-                    self.db.add(u)
-                    self.db.flush()
-
-                    s = Student(
-                        user_id=u.id,
-                        roll_number=roll,
-                        usn=usn,
-                        srn=srn,
-                        department_id=dept_id,
-                        current_semester=sem,
-                        batch_year=2024,
-                        admission_year=2022,
-                        section=sec,
-                        status="Active",
-                        cgpa=cgpa,
-                        attendance_percentage=att,
-                        placement_status="Eligible" if (cgpa >= 7.0 and att >= 75.0) else "Ineligible"
-                    )
-                    self.db.add(s)
-                    self.db.flush()
-                    successful += 1
-
-                elif import_type == "attendance":
-                    usn = str(row.get("usn", "")).strip().upper()
-                    st = self.db.query(Student).filter(Student.usn == usn).first()
-                    if not st:
-                        raise ValueError(f"Student USN '{usn}' not found.")
-                    subj_code = str(row.get("subject_code", "CS501")).strip().upper()
-                    subj = self.db.query(Subject).filter(Subject.code == subj_code).first()
-                    if not subj:
-                        raise ValueError(f"Subject '{subj_code}' not found.")
-
-                    tot = int(row.get("total_classes", 45))
-                    att = int(row.get("attended_classes", 40))
-                    if att > tot:
-                        raise ValueError(f"Attended ({att}) exceeds total ({tot})")
-
-                    curr_sem = self.db.query(Semester).filter(Semester.is_current == True).first()
-                    sem_id = curr_sem.id if curr_sem else 1
-
-                    sa = SubjectAttendance(
-                        student_id=st.id,
-                        subject_id=subj.id,
-                        semester_id=sem_id,
-                        total_classes=tot,
-                        attended_classes=att
-                    )
-                    self.db.add(sa)
-                    successful += 1
-
-            except Exception as e:
+                with self.db.begin_nested():  # a failed row leaves nothing half-written
+                    handle(row, ctx, current_user)
+                successful += 1
+            except Exception as e:  # noqa: BLE001 — each bad row is recorded as an import error and the job continues
                 failed += 1
-                err = ImportError(
-                    job_id=job.id,
-                    row_number=idx,
-                    raw_data=str(row),
-                    error_message=str(e)
-                )
+                err = ImportError(job_id=job.id, row_number=idx, raw_data=str(row), error_message=str(e))
                 self.db.add(err)
 
         job.successful_rows = successful
@@ -976,7 +1116,7 @@ class StudentIntelligenceService:
             user_id=current_user.id,
             resource_type="import_job",
             resource_id=str(job.id),
-            details={"type": import_type, "successful": successful, "failed": failed}
+            details={"type": import_type, "successful": successful, "failed": failed},
         )
 
         return job
@@ -987,24 +1127,54 @@ class StudentIntelligenceService:
         writer = csv.writer(output)
 
         if template_type == "students":
-            writer.writerow([
-                "usn", "srn", "roll_number", "full_name", "email",
-                "department", "program", "semester", "section",
-                "batch_year", "admission_year", "cgpa", "attendance"
-            ])
-            writer.writerow([
-                "1RV22CS099", "SRN-1RV22CS099", "CS22B099", "Sample Student",
-                "sample.student@smartcampus.edu", "CSE",
-                "B.Tech Computer Science & Engineering", "5", "A", "2024", "2022", "8.50", "92.0"
-            ])
+            writer.writerow(
+                [
+                    "usn",
+                    "srn",
+                    "roll_number",
+                    "full_name",
+                    "email",
+                    "department",
+                    "program",
+                    "semester",
+                    "section",
+                    "batch_year",
+                    "admission_year",
+                    "cgpa",
+                    "attendance",
+                ]
+            )
+            writer.writerow(
+                [
+                    "1RV22CS099",
+                    "SRN-1RV22CS099",
+                    "CS22B099",
+                    "Sample Student",
+                    "sample.student@your-university.example",
+                    "CSE",
+                    "B.Tech Computer Science & Engineering",
+                    "5",
+                    "A",
+                    "2024",
+                    "2022",
+                    "8.50",
+                    "92.0",
+                ]
+            )
         elif template_type == "academic_records":
-            writer.writerow([
-                "usn", "semester_number", "subject_code", "internal_marks",
-                "external_marks", "total_marks", "letter_grade", "grade_point"
-            ])
-            writer.writerow([
-                "1RV22CS001", "5", "CS501", "42", "48", "90", "O", "10.0"
-            ])
+            writer.writerow(
+                [
+                    "usn",
+                    "semester_number",
+                    "subject_code",
+                    "internal_marks",
+                    "external_marks",
+                    "total_marks",
+                    "letter_grade",
+                    "grade_point",
+                ]
+            )
+            writer.writerow(["1RV22CS001", "5", "CS501", "42", "48", "90", "O", "10.0"])
         elif template_type == "attendance":
             writer.writerow(["usn", "subject_code", "total_classes", "attended_classes"])
             writer.writerow(["1RV22CS001", "CS501", "45", "42"])
@@ -1014,6 +1184,11 @@ class StudentIntelligenceService:
         return output.getvalue()
 
     # Helpers
+    def _university(self, current_user: User):
+        from app.models.platform import University
+
+        return self.db.query(University).filter(University.id == current_user.university_id).first()
+
     def _verify_student_access(self, student_id: int, current_user: User) -> Student:
         student = self.db.query(Student).filter(Student.id == student_id).first()
         if not student:
@@ -1031,7 +1206,7 @@ class StudentIntelligenceService:
             id=s.id,
             user_id=s.user_id,
             full_name=u.full_name if u else "Student",
-            email=u.email if u else "student@smartcampus.edu",
+            email=u.email if u else "",
             phone=u.phone if u else None,
             roll_number=s.roll_number,
             usn=s.usn,
@@ -1060,6 +1235,20 @@ class StudentIntelligenceService:
             updated_at=s.updated_at,
         )
 
+    @staticmethod
+    def _apply_mapping(rows, columns, mapping: Optional[Dict[str, str]]):
+        """Rename source columns to ACEDRA field names, e.g. {"Student Email": "email"}, then accept the common
+        alternative headers in ``COLUMN_ALIASES`` (used by the bundled sample files)."""
+        if mapping:
+            clean = {str(k).strip().lower(): str(v).strip().lower() for k, v in mapping.items() if v}
+            rows = [{clean.get(str(k).strip().lower(), k): v for k, v in r.items()} for r in rows]
+            columns = [clean.get(str(c).strip().lower(), c) for c in columns]
+        for alias, field in COLUMN_ALIASES.items():
+            if alias in columns and field not in columns:
+                rows = [{(field if k == alias else k): v for k, v in r.items()} for r in rows]
+                columns = [field if c == alias else c for c in columns]
+        return rows, columns
+
     def _parse_file_rows(self, content: bytes, is_excel: bool) -> Tuple[List[Dict[str, Any]], List[str]]:
         rows = []
         columns = []
@@ -1086,13 +1275,9 @@ class StudentIntelligenceService:
                 rows.append(cleaned)
         return rows, columns
 
-    def _log_audit(self, action: str, user_id: Optional[int], resource_type: str, resource_id: str, details: Dict[str, Any]):
-        audit = AuditLog(
-            user_id=user_id,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            details=details
+    def _log_audit(
+        self, action: str, user_id: Optional[int], resource_type: str, resource_id: str, details: Dict[str, Any]
+    ):
+        AuditRepository(self.db).log(
+            action=action, user_id=user_id, resource_type=resource_type, resource_id=resource_id, details=details
         )
-        self.db.add(audit)
-        self.db.commit()

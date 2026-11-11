@@ -1,15 +1,22 @@
-import re
-import math
+"""Document text extraction (PDF, DOCX, TXT/MD), chunking and retrieval vectors."""
 import hashlib
-from typing import List, Dict, Any, Tuple, Optional
+import logging
+import math
+import re
 from io import BytesIO
+from typing import Any, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
     """
-    High-performance semantic embedding and text extraction service.
-    Produces 128-dimensional L2-normalized dense embeddings with deterministic
-    semantic hashing and term-frequency weighting. Supports cosine similarity ranking.
+    Text extraction, chunking and retrieval vectors.
+
+    EMBEDDING_PROVIDER=lexical (default): a 128-dimension hashed term-frequency vector (unigrams + bigrams).
+        This is LEXICAL retrieval — it matches words, not meaning. It is not a semantic embedding.
+    EMBEDDING_PROVIDER=openai_compatible | ollama: real semantic embeddings from the configured model.
+        Changing provider requires reindexing documents (vectors of different models are not comparable).
     """
 
     DIMENSION = 128
@@ -39,8 +46,8 @@ class EmbeddingService:
                             "section": f"Page {page_idx + 1}",
                             "text": cleaned,
                         })
-            except Exception as e:
-                # Fallback to UTF-8 text decoding if PDF parser fails
+            except Exception:  # noqa: BLE001 — parser-specific errors on malformed uploads; falls back to plain text
+                logger.warning("PDF text extraction failed for %s; falling back to plain-text decoding", file_name)
                 text = file_bytes.decode("utf-8", errors="ignore").strip()
                 extracted_sections.append({
                     "page_number": 1,
@@ -79,7 +86,8 @@ class EmbeddingService:
                         "section": current_section,
                         "text": "\n".join(current_paragraphs),
                     })
-            except Exception:
+            except Exception:  # noqa: BLE001 — parser-specific errors on malformed uploads; falls back to plain text
+                logger.warning("DOCX text extraction failed for %s; falling back to plain-text decoding", file_name)
                 text = file_bytes.decode("utf-8", errors="ignore").strip()
                 extracted_sections.append({
                     "page_number": 1,
@@ -173,13 +181,41 @@ class EmbeddingService:
 
         return chunks
 
+    @staticmethod
+    def provider_label() -> str:
+        from app.core.config import settings
+        if settings.EMBEDDING_PROVIDER == "lexical":
+            return "lexical-hash-128 (keyword retrieval, not semantic)"
+        return f"{settings.EMBEDDING_PROVIDER}:{settings.EMBEDDING_MODEL}"
+
     @classmethod
     def generate_embedding(cls, text: str) -> List[float]:
-        """
-        Generate a normalized 128-dimensional dense semantic embedding vector.
-        Uses positive token frequency hashing with sublinear term scaling
-        and L2 Euclidean normalization.
-        """
+        from app.core.config import settings
+        if settings.EMBEDDING_PROVIDER != "lexical":
+            return cls._remote_embedding(text)
+        return cls._lexical_vector(text)
+
+    @staticmethod
+    def _remote_embedding(text: str) -> List[float]:
+        import httpx
+
+        from app.core.config import settings
+        if settings.EMBEDDING_PROVIDER == "openai_compatible":
+            base = (settings.EMBEDDING_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+            r = httpx.post(f"{base}/embeddings", timeout=30,
+                           headers={"Authorization": f"Bearer {settings.EMBEDDING_API_KEY}"},
+                           json={"model": settings.EMBEDDING_MODEL, "input": text[:8000]})
+            r.raise_for_status()
+            return r.json()["data"][0]["embedding"]
+        base = (settings.EMBEDDING_BASE_URL or "http://localhost:11434").rstrip("/")
+        r = httpx.post(f"{base}/api/embeddings", timeout=30,
+                       json={"model": settings.EMBEDDING_MODEL, "prompt": text[:8000]})
+        r.raise_for_status()
+        return r.json()["embedding"]
+
+    @classmethod
+    def _lexical_vector(cls, text: str) -> List[float]:
+        """Hashed term-frequency vector (lexical). See class docstring."""
         vector = [0.0] * cls.DIMENSION
         if not text:
             return vector
@@ -219,7 +255,7 @@ class EmbeddingService:
         if not v1 or not v2 or len(v1) != len(v2):
             return 0.0
 
-        dot_product = sum(a * b for a, b in zip(v1, v2))
+        dot_product = sum(a * b for a, b in zip(v1, v2, strict=False))
         norm1 = math.sqrt(sum(a * a for a in v1))
         norm2 = math.sqrt(sum(b * b for b in v2))
 

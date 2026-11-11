@@ -1,11 +1,15 @@
-from datetime import datetime, timezone, date
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Float, Date as SqlDate, Text, JSON, DateTime
+from datetime import datetime, timezone
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date as SqlDate
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
-class SkillEvidence(Base, TimestampMixin):
+class SkillEvidence(Base, TimestampMixin, TenantMixin):
     """
     Supporting evidence, projects, certifications, or code repositories submitted for a skill.
     Allows students to back self-reported proficiencies with verifiable artifacts.
@@ -34,15 +38,16 @@ class SkillEvidence(Base, TimestampMixin):
     verified_by_user = relationship("User", foreign_keys=[verified_by_user_id])
 
 
-class CareerRole(Base, TimestampMixin):
+class CareerRole(Base, TimestampMixin, TenantMixin):
     """
     Configurable career roles against which student profiles are evaluated for placement readiness.
     Curated by Placement Officers and Academic Administrators.
     """
     __tablename__ = "career_roles"
+    __table_args__ = (UniqueConstraint("university_id", "code", name="uq_career_roles_tenant_code"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(50), unique=True, index=True, nullable=False)  # e.g., SOFTWARE_DEVELOPER, FULL_STACK_DEVELOPER, AI_ML_ENGINEER
+    code = Column(String(50), index=True, nullable=False)  # e.g., SOFTWARE_DEVELOPER, FULL_STACK_DEVELOPER, AI_ML_ENGINEER
     title = Column(String(100), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
     description = Column(Text, nullable=True)
@@ -57,7 +62,7 @@ class CareerRole(Base, TimestampMixin):
     opportunities = relationship("PlacementOpportunity", back_populates="role")
 
 
-class RoleSkill(Base, TimestampMixin):
+class RoleSkill(Base, TimestampMixin, TenantMixin):
     """
     Skills required or preferred for a specific Career Role, with target proficiency levels.
     """
@@ -76,7 +81,7 @@ class RoleSkill(Base, TimestampMixin):
     skill = relationship("Skill")
 
 
-class PlacementOpportunity(Base, TimestampMixin):
+class PlacementOpportunity(Base, TimestampMixin, TenantMixin):
     """
     Job or Internship drives posted by Placement Officers with explicit eligibility criteria.
     """
@@ -108,7 +113,7 @@ class PlacementOpportunity(Base, TimestampMixin):
     created_by = relationship("User", foreign_keys=[created_by_user_id])
 
 
-class OpportunityRequirement(Base, TimestampMixin):
+class OpportunityRequirement(Base, TimestampMixin, TenantMixin):
     """
     Specific skill requirements for a given job/internship opportunity.
     """
@@ -125,7 +130,7 @@ class OpportunityRequirement(Base, TimestampMixin):
     skill = relationship("Skill")
 
 
-class StudentApplication(Base, TimestampMixin):
+class StudentApplication(Base, TimestampMixin, TenantMixin):
     """
     Tracks a student's application to a placement job or internship opportunity.
     """

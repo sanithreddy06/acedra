@@ -1,111 +1,132 @@
-# Smart Campus Intelligence — Production Deployment Guide
+# Deployment guide
 
-## 1. Prerequisites & System Requirements
+## 1. Local development (no Docker)
 
-- **Operating System**: Linux (Ubuntu 22.04 LTS / Debian 12 / RHEL 9) or macOS
-- **Container Engine**: Docker Engine 24.0+ and Docker Compose v2.20+
-- **Host Specifications**:
-  - Minimum: 2 vCPU, 4GB RAM, 20GB SSD
-  - Recommended (Production): 4 vCPU, 8GB RAM, 50GB NVMe SSD
-- **Network Requirements**:
-  - Ports `80` (HTTP) and `443` (HTTPS) exposed
-  - Port `5432` restricted to internal Docker network `campus_backend_net`
+Requirements: Python 3.10+, Node 18+.
 
----
-
-## 2. Production Docker Deployment
-
-### Step 1: Clone Repository & Create Environment Configuration
 ```bash
-git clone <repository_url> smart-campus-intelligence
-cd smart-campus-intelligence
+# backend
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env                      # SQLite by default
+cd .. && python database/seeds/seed_all.py   # creates acedra.db with synthetic tenants (destructive reset)
+cd backend && uvicorn app.main:app --reload --port 8000
 
-# Copy production environment template
-cp .env.production.example .env.production
+# frontend (new terminal)
+cd frontend
+npm install
+npm run dev                                # http://localhost:5173 (proxies /api to :8000)
 ```
 
-### Step 2: Configure Production Secrets
-Edit `.env.production` and generate cryptographically secure secrets:
+API docs are at http://localhost:8000/docs (disabled in production). In development, emails are not sent. Super
+administrators can read invitation and reset links in **Platform → Email outbox**.
+
+## 2. Docker (local stack with PostgreSQL)
+
 ```bash
-# Generate a 64-character hex secret for JWT signing
-openssl rand -hex 32
-
-# Configure database credentials, CORS domains, and LLM API keys
-nano .env.production
+docker compose up --build
+# frontend http://localhost:3000 · API http://localhost:8000
 ```
 
-### Step 3: Launch Production Container Stack
-Execute Docker Compose with the production configuration file:
+The backend entrypoint runs `alembic upgrade head`. Then, because `SEED_DEMO_DATA=true`, it loads the
+synthetic tenants **only if the database has no universities**. Set `SEED_DEMO_DATA=false` to start empty.
+
+## 3. Production
+
+1. `cp .env.production.example .env.production` and fill in every value. The API refuses to start with a
+   default or short `SECRET_KEY`, wildcard CORS or a SQLite URL.
+2. `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`
+3. Migrations run on start. Demo data is never loaded in production (`SEED_DEMO_DATA=false`).
+4. Create the first ACEDRA super administrator once. There is no sign-up, by design:
+
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+docker compose -f docker-compose.prod.yml exec backend python - <<'PY'
+from app.core.database import SessionLocal
+from app.core.tenancy import TenantScope, set_session_scope
+from app.models import EmployeeProfile, Role
+from app.services.invitation_service import InvitationService
+db = SessionLocal(); set_session_scope(db, TenantScope(bypass=True))
+for n, d in [("platform_admin", "ACEDRA Super Administrator"), ("platform_employee", "ACEDRA Employee"),
+             ("student", "Student"), ("faculty", "Faculty"), ("mentor", "Mentor"),
+             ("admin", "University Administrator"), ("placement_officer", "Placement Officer")]:
+    db.query(Role).filter_by(name=n).first() or db.add(Role(name=n, display_name=d, permissions=[]))
+db.flush()
+u, _, _ = InvitationService(db).create_user_with_invitation(
+    email="you@your-company.example", full_name="Your Name", role="platform_admin", university=None, invited_by=None)
+db.add(EmployeeProfile(user_id=u.id, employee_code="ACD-0001")); db.commit()
+print("Invitation emailed to", u.email)
+PY
 ```
 
-### Step 4: Verify Container Health Status
-Inspect container health probes:
+5. Before building the frontend image, create `frontend/.env.production` from `frontend/.env.example` with the
+   confirmed operator name, address and contact emails (they are compiled into the public site; unset values show
+   as "[To be configured: …]"). Keep `LEGAL_ACCEPTANCE_ENFORCED=true` in `.env.production`.
+6. Have the bundled legal drafts reviewed, then publish approved versions from **Platform → Legal documents**
+   (draft → approve with a recorded note → publish with an effective date). Users are asked to accept new Terms and
+   Privacy versions the next time they use ACEDRA.
+7. Put TLS in front of the frontend container (a load balancer or reverse proxy), and set `PUBLIC_APP_URL` to the
+   public HTTPS origin so invitation links are correct.
+
+### Optional providers
+
+| Setting | Values | Notes |
+|---|---|---|
+| `LLM_PROVIDER` | `none`, `openai_compatible`, `anthropic`, `ollama` | With `none`, answers are extractive and labelled as offline |
+| `EMBEDDING_PROVIDER` | `lexical`, `openai_compatible`, `ollama` | Reindex documents after changing |
+| `EMAIL_PROVIDER` | `log`, `smtp` | `log` never sends mail |
+| `LEGAL_ACCEPTANCE_ENFORCED` | `false`, `true` | `true`: workspace API requests return 428 until the current Terms and Privacy versions are accepted |
+| `CONTACT_RATE_LIMIT` | e.g. `5/hour` | Public contact form, per client address |
+
+## 4. Database migrations
+
 ```bash
-docker compose -f docker-compose.prod.yml ps
+cd backend
+alembic upgrade head        # apply
+alembic check               # verify models and migrations match
+alembic revision --autogenerate -m "describe change"   # after changing models
 ```
-Expected output:
-- `smart_campus_prod_db`: `Up (healthy)`
-- `smart_campus_prod_backend`: `Up (healthy)`
-- `smart_campus_prod_frontend`: `Up (healthy)`
 
-Test HTTP health endpoints directly:
+| Revision | Adds |
+|---|---|
+| `0001_rio_baseline` | The multi-tenant schema |
+| `0002_legal_contact` | `legal_documents`, `legal_acceptances`, `contact_messages` (new tables only; no existing data is changed) |
+
+A local development database created by the app itself (`AUTO_CREATE_SCHEMA=true`, the default outside
+production) has no `alembic_version` table. Starting the API adds the three new tables to it automatically; to
+manage it with Alembic instead, run `alembic stamp 0001_rio_baseline` once and then `alembic upgrade head`. Both
+paths were checked on a copy of a seeded development database: existing rows were unchanged and `alembic check`
+reported no differences.
+
+`alembic upgrade head` applies `0002` to an existing database without resetting it; `alembic downgrade 0001_rio_baseline`
+drops only the three new tables. The first request that needs a legal document publishes the bundled drafts as
+version `0.1-draft`.
+
+`0001_rio_baseline` replaces the prototype's migrations, which were incomplete (modules 1 and 6 created no
+tables). Existing v0.1 databases are not upgraded in place: re-seed for the prototype, or export and import real
+data through the import centre.
+
+## 5. Backup and restore
+
 ```bash
-curl -i http://localhost/health
-curl -i http://localhost/ready
+DATABASE_URL=postgresql://user:pass@host:5432/acedra ./database/backup_db.sh ./database/backups
+DATABASE_URL=postgresql://user:pass@host:5432/acedra ./database/restore_db.sh ./database/backups/<file>.sql.gz
 ```
 
----
+For SQLite the scripts copy `acedra.db`. Schedule backups daily and test a restore before going live.
 
-## 3. Database Initialization & Alembic Migrations
+## 6. Health
 
-The database container automatically initializes the `pgvector` extension upon first launch via `database/init.sql`.
+* `GET /health`: process is up
+* `GET /ready`: database reachable; reports the configured AI and email providers
 
-To apply Alembic schema migrations inside the production container:
+## 7. Tests
+
 ```bash
-docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+cd backend && python -m pytest -q --ignore=tests/benchmark_performance.py
+# against PostgreSQL:
+TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/acedra_test python -m pytest -q --ignore=tests/benchmark_performance.py
+cd frontend && npm run build
 ```
 
-To seed initial canonical academic data, career roles, and university policy handbooks:
-```bash
-docker compose -f docker-compose.prod.yml exec backend python -m app.core.seed_data
-```
-
----
-
-## 4. SSL/TLS Termination & Domain Configuration
-
-For public internet deployment with HTTPS:
-1. Place your SSL certificate and private key at `/etc/ssl/certs/campus.crt` and `/etc/ssl/private/campus.key`.
-2. Update `docker/nginx.conf` with the SSL server block:
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name campus.institution.edu;
-
-    ssl_certificate /etc/ssl/certs/campus.crt;
-    ssl_certificate_key /etc/ssl/private/campus.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    
-    # ... include proxy configurations from docker/nginx.conf
-}
-```
-
----
-
-## 5. Automated Backup & Disaster Recovery
-
-### Automated Daily Backup via Cron
-Add the automated backup script to the system crontab:
-```bash
-# Run database backup every night at 2:00 AM UTC
-0 2 * * * /path/to/smart-campus-intelligence/database/backup_db.sh /var/backups/smart_campus >> /var/log/campus_backup.log 2>&1
-```
-
-### Restoration Routine
-To restore from a compressed archive:
-```bash
-./database/restore_db.sh /var/backups/smart_campus/smart_campus_pg_20261109_020000.sql.gz
-```
+Each run creates and seeds its own isolated database.

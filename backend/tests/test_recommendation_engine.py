@@ -1,13 +1,20 @@
-import pytest
 import time
+
+import pytest
 from fastapi.testclient import TestClient
+
+from app.core.tenancy import TenantScope, set_session_scope
 from app.main import app
+
+
+def _tenant_session(db, tenant_id=1):
+    set_session_scope(db, TenantScope(tenant_id=tenant_id))
+    return db
 from app.core.database import SessionLocal
-from app.models.user import User
+from app.models.academic import Subject, SubjectResult
 from app.models.profile import Student
-from app.models.academic import SubjectResult, StudentAssessment, Subject
-from app.models.student_intelligence import StudentSkill, Skill
-from app.models.recommendation import Recommendation, RecommendationCatalogue
+from app.models.student_intelligence import Skill, StudentSkill
+from app.models.user import User
 from app.services.recommendation_service import RecommendationService
 
 client = TestClient(app)
@@ -21,17 +28,17 @@ def get_token(email: str, password: str = "AdminPass123!") -> str:
 
 @pytest.fixture(scope="module")
 def admin_token():
-    return get_token("admin@smartcampus.edu", "AdminPass123!")
+    return get_token("admin@reva-demo.example", "AdminPass123!")
 
 
 @pytest.fixture(scope="module")
 def student_token():
-    return get_token("student@smartcampus.edu", "StudentPass123!")
+    return get_token("student@reva-demo.example", "StudentPass123!")
 
 
 @pytest.fixture(scope="module")
 def faculty_token():
-    return get_token("faculty@smartcampus.edu", "FacultyPass123!")
+    return get_token("faculty@reva-demo.example", "FacultyPass123!")
 
 
 # -----------------------------------------------------------------------------
@@ -93,7 +100,7 @@ def test_catalogue_management(admin_token, student_token):
 # 2. TEST WEAK SUBJECT PERFORMANCE RECOMMENDATION
 # -----------------------------------------------------------------------------
 def test_weak_subject_performance_recommendation():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         uniq_id = int(time.time() * 1000) % 1000000
         user = User(
@@ -158,7 +165,7 @@ def test_weak_subject_performance_recommendation():
 # 3. TEST MISSING TECHNICAL SKILLS RECOMMENDATION
 # -----------------------------------------------------------------------------
 def test_missing_technical_skills_recommendation():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         uniq_id = int(time.time() * 1000) % 1000000
         user = User(
@@ -212,7 +219,7 @@ def test_missing_technical_skills_recommendation():
 # 4. TEST HEALTHY NO-GAP STUDENT
 # -----------------------------------------------------------------------------
 def test_healthy_no_gap_student():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         uniq_id = int(time.time() * 1000) % 1000000
         user = User(

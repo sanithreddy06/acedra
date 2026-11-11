@@ -1,11 +1,13 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey, Float, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, Date, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
-class Semester(Base, TimestampMixin):
+class Semester(Base, TimestampMixin, TenantMixin):
     __tablename__ = "semesters"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -20,11 +22,12 @@ class Semester(Base, TimestampMixin):
     semester_records = relationship("StudentSemesterRecord", back_populates="semester")
 
 
-class Subject(Base, TimestampMixin):
+class Subject(Base, TimestampMixin, TenantMixin):
     __tablename__ = "subjects"
+    __table_args__ = (UniqueConstraint("university_id", "code", name="uq_subjects_tenant_code"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(30), unique=True, index=True, nullable=False)  # e.g., "CS501"
+    code = Column(String(30), index=True, nullable=False)  # e.g., "CS501"
     name = Column(String(200), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     semester_number = Column(Integer, nullable=False)
@@ -38,7 +41,7 @@ class Subject(Base, TimestampMixin):
     assessments = relationship("StudentAssessment", back_populates="subject")
 
 
-class FacultyCourseAssignment(Base, TimestampMixin):
+class FacultyCourseAssignment(Base, TimestampMixin, TenantMixin):
     __tablename__ = "faculty_course_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -54,7 +57,7 @@ class FacultyCourseAssignment(Base, TimestampMixin):
 
 
 # MODULE 1: Academic Records per Semester
-class StudentSemesterRecord(Base, TimestampMixin):
+class StudentSemesterRecord(Base, TimestampMixin, TenantMixin):
     __tablename__ = "student_semester_records"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -72,7 +75,7 @@ class StudentSemesterRecord(Base, TimestampMixin):
 
 
 # MODULE 1: Subject-wise Examination Marks
-class SubjectResult(Base, TimestampMixin):
+class SubjectResult(Base, TimestampMixin, TenantMixin):
     __tablename__ = "subject_results"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -92,7 +95,7 @@ class SubjectResult(Base, TimestampMixin):
 
 
 # MODULE 1: Attendance Management (Computed from counts)
-class SubjectAttendance(Base, TimestampMixin):
+class SubjectAttendance(Base, TimestampMixin, TenantMixin):
     __tablename__ = "subject_attendance"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -118,7 +121,7 @@ class SubjectAttendance(Base, TimestampMixin):
 
 
 # MODULE 1: Continuous Assessments
-class StudentAssessment(Base, TimestampMixin):
+class StudentAssessment(Base, TimestampMixin, TenantMixin):
     __tablename__ = "student_assessments"
 
     id = Column(Integer, primary_key=True, index=True)

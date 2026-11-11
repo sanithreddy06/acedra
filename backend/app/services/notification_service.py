@@ -1,9 +1,10 @@
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from fastapi import HTTPException
+"""In-app notifications: per-user inbox, read state, preferences and administrator broadcasts."""
+from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from app.core.clock import utcnow
 from app.models.intervention import Notification, NotificationPreference, NotificationType
 from app.models.user import User
 
@@ -21,11 +22,11 @@ class NotificationService:
         """Fetch user notifications and calculate unread count."""
         query = db.query(Notification).filter(Notification.user_id == user_id)
         if unread_only:
-            query = query.filter(Notification.is_read == False)
+            query = query.filter(Notification.is_read.is_(False))
 
         unread_count = db.query(Notification).filter(
             Notification.user_id == user_id,
-            Notification.is_read == False,
+            Notification.is_read.is_(False),
         ).count()
 
         notifications = query.order_by(desc(Notification.created_at)).limit(limit).all()
@@ -42,7 +43,7 @@ class NotificationService:
             return False
 
         notif.is_read = True
-        notif.read_at = datetime.utcnow()
+        notif.read_at = utcnow()
         db.commit()
         return True
 
@@ -51,10 +52,10 @@ class NotificationService:
         """Mark all unread notifications as read for a user."""
         unread = db.query(Notification).filter(
             Notification.user_id == user_id,
-            Notification.is_read == False,
+            Notification.is_read.is_(False),
         ).all()
 
-        now = datetime.utcnow()
+        now = utcnow()
         for n in unread:
             n.is_read = True
             n.read_at = now
@@ -75,7 +76,7 @@ class NotificationService:
                 intervention_notifications=True,
                 placement_notifications=True,
                 announcement_notifications=True,
-                updated_at=datetime.utcnow(),
+                updated_at=utcnow(),
             )
             db.add(pref)
             db.commit()
@@ -89,7 +90,7 @@ class NotificationService:
         for key, val in updates.items():
             if val is not None and hasattr(pref, key):
                 setattr(pref, key, val)
-        pref.updated_at = datetime.utcnow()
+        pref.updated_at = utcnow()
         db.commit()
         db.refresh(pref)
         return pref
@@ -103,14 +104,14 @@ class NotificationService:
         department_id: Optional[int] = None,
     ) -> int:
         """Broadcast administrative announcement to users."""
-        query = db.query(User).filter(User.is_active == True)
+        query = db.query(User).filter(User.is_active.is_(True))
         if target_role:
             query = query.filter(User.role == target_role)
         if department_id:
             query = query.filter(User.department_id == department_id)
 
         users = query.all()
-        now = datetime.utcnow()
+        now = utcnow()
         for u in users:
             notif = Notification(
                 user_id=u.id,

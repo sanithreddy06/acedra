@@ -1,11 +1,12 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.models.ai_assistant import (
-    DocumentCategory,
-    DocumentAccessPermission,
     AssistantMode,
-    MessageRole,
+    DocumentAccessPermission,
+    DocumentCategory,
 )
 
 
@@ -94,6 +95,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     sources_json: List[SourceCitation] = []
+    generation_mode: str = "offline_fallback"
     token_count: int
     processing_time_ms: float
     created_at: datetime

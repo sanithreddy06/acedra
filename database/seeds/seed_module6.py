@@ -28,6 +28,7 @@ from app.models.intervention import (
     ReportType,
 )
 from app.services.report_service import ReportService
+from app.core.clock import utcnow  # noqa: E402
 
 
 def seed_module6():
@@ -73,8 +74,8 @@ def seed_module6():
                 status=InterventionStatus.IN_PROGRESS.value,
                 initial_notes="Student attendance dropped below 75% threshold in 2 core computer science courses. Recommended supplementary tutoring.",
                 target_resolution_date=date.today() + timedelta(days=21),
-                created_at=datetime.utcnow() - timedelta(days=12),
-                updated_at=datetime.utcnow() - timedelta(days=2),
+                created_at=utcnow() - timedelta(days=12),
+                updated_at=utcnow() - timedelta(days=2),
             )
             db.add(it1)
             db.flush()
@@ -85,21 +86,21 @@ def seed_module6():
                 author_id=mentor_user.id if mentor_user else 1,
                 note_text="Conducted initial 1-on-1 counseling session. Identified commuting challenges and lab scheduling conflict.",
                 note_type="OBSERVATION",
-                created_at=datetime.utcnow() - timedelta(days=11),
+                created_at=utcnow() - timedelta(days=11),
             ))
             db.add(InterventionNote(
                 intervention_id=it1.id,
                 author_id=mentor_user.id if mentor_user else 1,
                 note_text="Formulated remedial study schedule: 4 hours weekly guided lab time and peer tutoring for Operating Systems.",
                 note_type="ACTION_ITEM",
-                created_at=datetime.utcnow() - timedelta(days=9),
+                created_at=utcnow() - timedelta(days=9),
             ))
             db.add(InterventionNote(
                 intervention_id=it1.id,
                 author_id=mentor_user.id if mentor_user else 1,
                 note_text="Communicated attendance recovery criteria and expectations with student's guardian via official academic portal.",
                 note_type="PARENT_COMMUNICATION",
-                created_at=datetime.utcnow() - timedelta(days=4),
+                created_at=utcnow() - timedelta(days=4),
             ))
 
             # Followups for Case 1
@@ -107,12 +108,12 @@ def seed_module6():
                 intervention_id=it1.id,
                 mentor_id=lead_mentor.id,
                 scheduled_date=date.today() - timedelta(days=5),
-                conducted_date=datetime.utcnow() - timedelta(days=5),
+                conducted_date=utcnow() - timedelta(days=5),
                 followup_status="COMPLETED",
                 outcome_notes="Student attended all peer study group sessions this week. Subject attendance climbed from 71% to 76%.",
                 student_feedback="Found the peer explanation on memory paging very helpful. Confident for upcoming mid-term re-test.",
                 next_review_date=date.today() + timedelta(days=7),
-                created_at=datetime.utcnow() - timedelta(days=10),
+                created_at=utcnow() - timedelta(days=10),
             ))
             db.add(InterventionFollowup(
                 intervention_id=it1.id,
@@ -120,7 +121,7 @@ def seed_module6():
                 scheduled_date=date.today() + timedelta(days=7),
                 followup_status="SCHEDULED",
                 outcome_notes="Scheduled check-in on midterm 2 test scores and final attendance margin.",
-                created_at=datetime.utcnow() - timedelta(days=5),
+                created_at=utcnow() - timedelta(days=5),
             ))
 
             # Case 2: Career Readiness & Placement Mentoring (ASSIGNED)
@@ -134,8 +135,8 @@ def seed_module6():
                 status=InterventionStatus.ASSIGNED.value,
                 initial_notes="Mentee target role is Cloud Engineer. Identified gap in AWS/Docker containerization skills before Day 1 recruitment drives.",
                 target_resolution_date=date.today() + timedelta(days=30),
-                created_at=datetime.utcnow() - timedelta(days=5),
-                updated_at=datetime.utcnow() - timedelta(days=1),
+                created_at=utcnow() - timedelta(days=5),
+                updated_at=utcnow() - timedelta(days=1),
             )
             db.add(it2)
             db.flush()
@@ -145,7 +146,7 @@ def seed_module6():
                 author_id=mentor_user.id if mentor_user else 1,
                 note_text="Curated AWS Certified Solutions Architect module and recommended Docker hands-on lab sandbox.",
                 note_type="ACTION_ITEM",
-                created_at=datetime.utcnow() - timedelta(days=3),
+                created_at=utcnow() - timedelta(days=3),
             ))
 
             db.add(InterventionFollowup(
@@ -154,7 +155,7 @@ def seed_module6():
                 scheduled_date=date.today() + timedelta(days=4),
                 followup_status="SCHEDULED",
                 outcome_notes="Review project repository demonstrating microservices deployment on Docker/Kubernetes.",
-                created_at=datetime.utcnow() - timedelta(days=2),
+                created_at=utcnow() - timedelta(days=2),
             ))
 
             # Case 3: Attendance Condonation & Wellness Counseling (RESOLVED)
@@ -168,10 +169,10 @@ def seed_module6():
                 status=InterventionStatus.RESOLVED.value,
                 initial_notes="Review valid medical certificate submitted for 6 days of absence during viral infection.",
                 target_resolution_date=date.today() - timedelta(days=2),
-                resolved_at=datetime.utcnow() - timedelta(days=2),
+                resolved_at=utcnow() - timedelta(days=2),
                 resolution_summary="Medical certificate verified by university health clinic. Attendance condonation of 5% approved by Dean Academics. Overall attendance restored to 82%.",
-                created_at=datetime.utcnow() - timedelta(days=20),
-                updated_at=datetime.utcnow() - timedelta(days=2),
+                created_at=utcnow() - timedelta(days=20),
+                updated_at=utcnow() - timedelta(days=2),
             )
             db.add(it3)
             db.flush()
@@ -181,14 +182,14 @@ def seed_module6():
                 author_id=mentor_user.id if mentor_user else 1,
                 note_text="Received official hospital discharge slip. Forwarded to Academic Registrar for condonation waiver.",
                 note_type="COUNSELING",
-                created_at=datetime.utcnow() - timedelta(days=18),
+                created_at=utcnow() - timedelta(days=18),
             ))
             db.add(InterventionNote(
                 intervention_id=it3.id,
                 author_id=mentor_user.id if mentor_user else 1,
                 note_text="Condonation approval confirmed in institutional ERP. Case closed successfully.",
                 note_type="ACTION_ITEM",
-                created_at=datetime.utcnow() - timedelta(days=2),
+                created_at=utcnow() - timedelta(days=2),
             ))
 
             db.commit()
@@ -213,8 +214,8 @@ def seed_module6():
                     notification_type=NotificationType.ADMINISTRATIVE_ANNOUNCEMENT.value,
                     severity="INFO",
                     is_read=True,
-                    read_at=datetime.utcnow() - timedelta(days=1),
-                    created_at=datetime.utcnow() - timedelta(days=3),
+                    read_at=utcnow() - timedelta(days=1),
+                    created_at=utcnow() - timedelta(days=3),
                 ))
 
                 if u.role == UserRole.STUDENT.value:
@@ -225,7 +226,7 @@ def seed_module6():
                         notification_type=NotificationType.NEW_RECOMMENDATION.value,
                         severity="INFO",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=4),
+                        created_at=utcnow() - timedelta(hours=4),
                     ))
                     db.add(Notification(
                         user_id=u.id,
@@ -234,7 +235,7 @@ def seed_module6():
                         notification_type=NotificationType.INTERVENTION_FOLLOWUP.value,
                         severity="WARNING",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=1),
+                        created_at=utcnow() - timedelta(hours=1),
                     ))
 
                 elif u.role == UserRole.MENTOR.value:
@@ -245,7 +246,7 @@ def seed_module6():
                         notification_type=NotificationType.MENTOR_ASSIGNMENT.value,
                         severity="WARNING",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=2),
+                        created_at=utcnow() - timedelta(hours=2),
                     ))
                     db.add(Notification(
                         user_id=u.id,
@@ -254,7 +255,7 @@ def seed_module6():
                         notification_type=NotificationType.RISK_ALERT.value,
                         severity="ERROR",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=5),
+                        created_at=utcnow() - timedelta(hours=5),
                     ))
 
                 elif u.role == UserRole.FACULTY.value:
@@ -265,7 +266,7 @@ def seed_module6():
                         notification_type=NotificationType.STATUS_UPDATE.value,
                         severity="SUCCESS",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=6),
+                        created_at=utcnow() - timedelta(hours=6),
                     ))
 
                 elif u.role == UserRole.PLACEMENT_OFFICER.value:
@@ -276,7 +277,7 @@ def seed_module6():
                         notification_type=NotificationType.ADMINISTRATIVE_ANNOUNCEMENT.value,
                         severity="SUCCESS",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=3),
+                        created_at=utcnow() - timedelta(hours=3),
                     ))
 
                 elif u.role == UserRole.ADMIN.value:
@@ -287,7 +288,7 @@ def seed_module6():
                         notification_type=NotificationType.ADMINISTRATIVE_ANNOUNCEMENT.value,
                         severity="INFO",
                         is_read=False,
-                        created_at=datetime.utcnow() - timedelta(hours=1),
+                        created_at=utcnow() - timedelta(hours=1),
                     ))
 
                 # Default Notification Preferences

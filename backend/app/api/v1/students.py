@@ -1,24 +1,26 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+
 from app.api.deps import get_current_active_user, require_role
+from app.core.database import get_db
 from app.models.user import User, UserRole
 from app.schemas.student_intelligence import (
-    StudentCreate,
-    StudentUpdate,
-    StudentProfileOut,
-    StudentAnalyticsOut,
-    FacultyAnalyticsOut,
     AdminAnalyticsOut,
-    StudentSkillCreate,
-    StudentSkillOut,
     CertificationCreate,
     CertificationOut,
-    ProjectCreate,
-    ProjectOut,
+    FacultyAnalyticsOut,
     InternshipCreate,
     InternshipOut,
+    ProjectCreate,
+    ProjectOut,
+    StudentAnalyticsOut,
+    StudentCreate,
+    StudentProfileOut,
+    StudentSkillCreate,
+    StudentSkillOut,
+    StudentUpdate,
 )
 from app.services.student_service import StudentIntelligenceService
 

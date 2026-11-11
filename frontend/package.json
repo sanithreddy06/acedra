@@ -1,31 +1,42 @@
 {
-  "name": "smart-campus-frontend",
+  "name": "acedra-frontend",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "gen:api": "python3 ../backend/scripts/export_openapi.py openapi.json && openapi-typescript openapi.json -o src/types/openapi.ts"
   },
   "dependencies": {
+    "@fontsource/instrument-sans": "^5.3.0",
+    "@fontsource/newsreader": "^5.3.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6",
     "recharts": "^2.13.3",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.4.49",
-    "puppeteer-core": "^25.16.0",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "typescript-eslint": "^8.72.1",
+    "vite": "^5.4.21"
   }
 }

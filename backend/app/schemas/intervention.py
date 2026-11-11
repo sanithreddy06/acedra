@@ -1,11 +1,10 @@
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from datetime import date, datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.models.intervention import (
-    InterventionStatus,
     InterventionType,
-    NotificationType,
-    ReportType,
 )
 
 
@@ -68,14 +67,6 @@ class InterventionCreate(BaseModel):
     target_resolution_date: Optional[date] = None
 
 
-class InterventionUpdate(BaseModel):
-    mentor_id: Optional[int] = None
-    title: Optional[str] = None
-    priority: Optional[str] = None
-    initial_notes: Optional[str] = None
-    target_resolution_date: Optional[date] = None
-
-
 class InterventionStatusUpdate(BaseModel):
     status: str  # OPEN, ASSIGNED, IN_PROGRESS, RESOLVED, CLOSED
     resolution_summary: Optional[str] = None
@@ -112,23 +103,6 @@ class InterventionResponse(BaseModel):
 class InterventionDetailResponse(InterventionResponse):
     notes: List[InterventionNoteResponse] = []
     followups: List[InterventionFollowupResponse] = []
-
-
-class NotificationResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    user_id: int
-    title: str
-    message: str
-    notification_type: str
-    severity: str
-    reference_id: Optional[int] = None
-    reference_type: Optional[str] = None
-    action_url: Optional[str] = None
-    is_read: bool
-    read_at: Optional[datetime] = None
-    created_at: datetime
 
 
 class NotificationPreferenceResponse(BaseModel):

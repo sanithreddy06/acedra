@@ -1,11 +1,23 @@
 from typing import Any, List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+
 from app.api.deps import get_current_active_user, require_role
+from app.core.database import get_db
+from app.models.academic import FacultyCourseAssignment, Semester, Subject
+from app.models.department import Department
+from app.models.profile import Faculty
 from app.models.user import User, UserRole
-from app.models.academic import Semester, Subject, FacultyCourseAssignment
-from app.schemas.academic import SemesterOut, SemesterCreate, SubjectOut, SubjectCreate, FacultyCourseAssignmentOut
+from app.repositories.audit_repo import AuditRepository
+from app.schemas.academic import (
+    FacultyCourseAssignmentOut,
+    SemesterCreate,
+    SemesterOut,
+    SubjectCreate,
+    SubjectOut,
+    TeachingAssignmentCreate,
+)
 
 router = APIRouter(prefix="/academics", tags=["Academic Structure"])
 
@@ -25,7 +37,12 @@ def create_semester(
     current_user: User = Depends(require_role(UserRole.ADMIN.value)),
     db: Session = Depends(get_db)
 ) -> Any:
-    """Create a new semester term (Admin only)."""
+    """Create a term (Admin only). Marking it current un-marks any previous current term."""
+    if db.query(Semester).filter(Semester.semester_number == sem_in.semester_number,
+                                 Semester.academic_year == sem_in.academic_year).first():
+        raise HTTPException(status_code=400, detail="This term already exists for that academic year.")
+    if sem_in.is_current:
+        db.query(Semester).filter(Semester.is_current.is_(True)).update({"is_current": False})
     semester = Semester(**sem_in.model_dump())
     db.add(semester)
     db.commit()
@@ -59,6 +76,9 @@ def create_subject(
     existing = db.query(Subject).filter(Subject.code == sub_in.code.upper()).first()
     if existing:
         raise HTTPException(status_code=400, detail="Subject with this code already exists")
+    # The session is tenant-scoped, so another university's department is indistinguishable from a missing one.
+    if not db.query(Department).filter(Department.id == sub_in.department_id).first():
+        raise HTTPException(status_code=422, detail="Department not found in your university.")
 
     subject = Subject(**sub_in.model_dump())
     subject.code = subject.code.upper()
@@ -98,3 +118,55 @@ def list_course_assignments(
         )
         results.append(item)
     return results
+
+
+@router.post("/assignments", response_model=FacultyCourseAssignmentOut, status_code=status.HTTP_201_CREATED)
+def create_course_assignment(
+    body: TeachingAssignmentCreate,
+    current_user: User = Depends(require_role(UserRole.ADMIN.value)),
+    db: Session = Depends(get_db),
+) -> Any:
+    """Assign a faculty member to a subject section (Admin only). This decides which students they can see."""
+    faculty = db.query(Faculty).filter(Faculty.user_id == body.faculty_user_id).first()
+    if not faculty:
+        raise HTTPException(status_code=422, detail="That person has no faculty profile in your university.")
+    subject = db.query(Subject).filter(Subject.id == body.subject_id).first()
+    term = db.query(Semester).filter(Semester.id == body.semester_id).first()
+    if not subject or not term:
+        raise HTTPException(status_code=422, detail="Subject or term not found in your university.")
+    section = body.section.strip().upper()
+    duplicate = db.query(FacultyCourseAssignment).filter(
+        FacultyCourseAssignment.faculty_id == faculty.id, FacultyCourseAssignment.subject_id == subject.id,
+        FacultyCourseAssignment.semester_id == term.id, FacultyCourseAssignment.section == section).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="This teaching assignment already exists.")
+    assignment = FacultyCourseAssignment(faculty_id=faculty.id, subject_id=subject.id, semester_id=term.id,
+                                         section=section, academic_year=body.academic_year.strip())
+    db.add(assignment)
+    AuditRepository(db).log(action="TEACHING_ASSIGNMENT_CREATED", user_id=current_user.id,
+                            resource_type="teaching_assignment", resource_id=f"{faculty.id}:{subject.id}:{section}",
+                            details={"faculty_user_id": body.faculty_user_id, "subject": subject.code,
+                                     "term_id": term.id, "section": section}, commit=False)
+    db.commit()
+    db.refresh(assignment)
+    return FacultyCourseAssignmentOut(
+        id=assignment.id, faculty_id=faculty.id, subject_id=subject.id, semester_id=term.id, section=section,
+        academic_year=assignment.academic_year, faculty_name=faculty.user.full_name if faculty.user else None,
+        subject_name=subject.name, subject_code=subject.code,
+    )
+
+
+@router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_course_assignment(
+    assignment_id: int,
+    current_user: User = Depends(require_role(UserRole.ADMIN.value)),
+    db: Session = Depends(get_db),
+) -> None:
+    """Remove a teaching assignment; the faculty member loses access to that section's students."""
+    assignment = db.query(FacultyCourseAssignment).filter(FacultyCourseAssignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Teaching assignment not found.")
+    db.delete(assignment)
+    AuditRepository(db).log(action="TEACHING_ASSIGNMENT_REMOVED", user_id=current_user.id,
+                            resource_type="teaching_assignment", resource_id=str(assignment_id), commit=False)
+    db.commit()

@@ -1,5 +1,5 @@
 # ==============================================================================
-# Production Dockerfile for Smart Campus Intelligence Backend (FastAPI)
+# Production Dockerfile for ACEDRA Backend (FastAPI)
 # Multi-stage build with non-root security execution and production Gunicorn/Uvicorn
 # ==============================================================================
 
@@ -35,17 +35,18 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Create non-privileged service user
-RUN groupadd -g 10001 campus && \
-    useradd -u 10001 -g campus -s /bin/bash -m appuser
+RUN groupadd -g 10001 acedra && \
+    useradd -u 10001 -g acedra -s /bin/bash -m appuser
 
 # Copy application source code
 COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini .
-COPY datasets/ ./datasets
+COPY database/seeds ./database/seeds
+COPY docker/entrypoint.sh /entrypoint.sh
 
 # Create storage directory for uploads and document indexing
-RUN mkdir -p /app/storage/documents && chown -R appuser:campus /app
+RUN mkdir -p /app/storage/documents && chown -R appuser:acedra /app
 
 USER appuser
 
@@ -54,4 +55,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-"]

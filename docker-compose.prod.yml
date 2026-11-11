@@ -1,29 +1,27 @@
 # ==============================================================================
-# Production Docker Compose for Smart Campus Intelligence Platform
+# Production Docker Compose for ACEDRA
 # Integrates:
 # - PostgreSQL 16 with pgvector extension
 # - Production Gunicorn/Uvicorn FastAPI Backend
 # - Production Nginx React Frontend with Reverse Proxy, SSL-ready, & Rate Limiting
 # ==============================================================================
 
-version: '3.8'
-
 services:
   db:
     image: pgvector/pgvector:pg16
-    container_name: smart_campus_prod_db
+    container_name: acedra_prod_db
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-campus_admin}
+      POSTGRES_USER: ${POSTGRES_USER:-acedra}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set in .env.production}
-      POSTGRES_DB: ${POSTGRES_DB:-smart_campus_production}
+      POSTGRES_DB: ${POSTGRES_DB:-acedra}
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
-      - campus_backend_net
+      - acedra_backend_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-campus_admin} -d ${POSTGRES_DB:-smart_campus_production}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acedra} -d ${POSTGRES_DB:-acedra}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -38,24 +36,36 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.backend.prod
-    container_name: smart_campus_prod_backend
+    container_name: acedra_prod_backend
     restart: always
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-campus_admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-smart_campus_production}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-acedra}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-acedra}
       - SECRET_KEY=${SECRET_KEY:?JWT secret key must be configured in .env.production}
       - ENVIRONMENT=production
-      - CORS_ORIGINS=["http://localhost","http://localhost:80","https://campus.institution.edu"]
+      - CORS_ORIGINS=${CORS_ORIGINS:?Set CORS_ORIGINS to your public origin(s)}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:?Set PUBLIC_APP_URL (used in invitation and reset links)}
+      - SEED_DEMO_DATA=false
       - ACCESS_TOKEN_EXPIRE_MINUTES=60
       - REFRESH_TOKEN_EXPIRE_DAYS=7
       - RATE_LIMIT_DEFAULT=120/minute
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-none}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-lexical}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
     volumes:
       - document_storage:/app/storage/documents
     networks:
-      - campus_backend_net
-      - campus_frontend_net
+      - acedra_backend_net
+      - acedra_frontend_net
     depends_on:
       db:
         condition: service_healthy
@@ -75,12 +85,12 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend.prod
-    container_name: smart_campus_prod_frontend
+    container_name: acedra_prod_frontend
     restart: always
     ports:
       - "80:80"
     networks:
-      - campus_frontend_net
+      - acedra_frontend_net
     depends_on:
       backend:
         condition: service_healthy
@@ -97,13 +107,13 @@ services:
 
 volumes:
   postgres_prod_data:
-    name: smart_campus_postgres_prod_data
+    name: acedra_postgres_prod_data
   document_storage:
-    name: smart_campus_document_storage
+    name: acedra_document_storage
 
 networks:
-  campus_backend_net:
+  acedra_backend_net:
     driver: bridge
     internal: true
-  campus_frontend_net:
+  acedra_frontend_net:
     driver: bridge

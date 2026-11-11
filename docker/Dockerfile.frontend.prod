@@ -1,5 +1,5 @@
 # ==============================================================================
-# Production Dockerfile for Smart Campus Intelligence Frontend (React + Vite)
+# Production Dockerfile for ACEDRA Frontend (React + Vite)
 # Multi-stage build with optimized Nginx web server
 # ==============================================================================
 

@@ -1,35 +1,53 @@
-from typing import List, Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
+from typing import List, Optional
 
-from app.core.database import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
 from app.api.deps import get_current_active_user, require_role
-from app.models.user import User
+from app.core.database import get_db
 from app.models.profile import Student
 from app.models.recommendation import (
-    RecommendationCatalogue,
     Recommendation,
-    RecommendationProgress,
-    RecommendationFeedback,
+    RecommendationCatalogue,
 )
+from app.models.user import User, UserRole
 from app.schemas.recommendation import (
     CatalogueItemCreate,
-    CatalogueItemUpdate,
     CatalogueItemOut,
-    RecommendationOut,
+    CatalogueItemUpdate,
     MentorSuggestionCreate,
-    RecommendationRejectRequest,
-    RecommendationGuidanceRequest,
-    RecommendationProgressCreate,
     RecommendationFeedbackCreate,
     RecommendationFeedbackOut,
+    RecommendationGuidanceRequest,
+    RecommendationOut,
+    RecommendationProgressCreate,
+    RecommendationRejectRequest,
     StudentCareerProfileUpdate,
     StudentLearningPathOut,
 )
-from app.services.recommendation_service import RecommendationService
+from app.services.recommendation_service import RecommendationService, recommendation_to_out
 
 router = APIRouter(prefix="/recommendations", tags=["Personalized Recommendation Engine"])
+
+
+def _get_student_for_caller(db: Session, student_id: int, current_user: User, denied_detail: str) -> Student:
+    """Load a student (tenant-scoped) and stop students from acting on anyone but themselves."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
+    if current_user.role == UserRole.STUDENT.value and student.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=denied_detail)
+    return student
+
+
+def _get_recommendation_for_caller(db: Session, recommendation_id: int, current_user: User) -> Recommendation:
+    """Load a recommendation (tenant- and student-scoped); students may only act on their own."""
+    rec = db.query(Recommendation).filter(Recommendation.id == recommendation_id).first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found.")
+    if current_user.role == UserRole.STUDENT.value and rec.student.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    return rec
 
 
 # -----------------------------------------------------------------------------
@@ -39,14 +57,14 @@ router = APIRouter(prefix="/recommendations", tags=["Personalized Recommendation
 def list_catalogue(
     category: Optional[str] = Query(None),
     difficulty: Optional[str] = Query(None),
-    status: Optional[str] = Query("Active"),
+    status_filter: Optional[str] = Query("Active", alias="status"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve learning resources from the approved recommendation catalogue."""
     # Ensure default canonical resources are seeded
     RecommendationService.seed_default_catalogue_if_needed(db, current_user.id)
-    return RecommendationService.get_catalogue(db, category=category, difficulty=difficulty, status=status)
+    return RecommendationService.get_catalogue(db, category=category, difficulty=difficulty, status=status_filter)
 
 
 @router.post("/catalogue", response_model=CatalogueItemOut, status_code=status.HTTP_201_CREATED)
@@ -102,28 +120,19 @@ def generate_recommendations(
     Evaluates student academic results, skills, career goals, and interests to
     generate personalized, fact-grounded recommendations.
     """
-    student = db.query(Student).filter(Student.id == student_id).first()
-    if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-
-    # Student Isolation
-    if current_user.role == "student" and student.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: Students can only generate recommendations for themselves.",
-        )
+    student = _get_student_for_caller(db, student_id, current_user, "Access denied: Students can only generate recommendations for themselves.")
 
     recs = RecommendationService.generate_recommendations_for_student(
         db, student_id=student.id, force_regenerate=force_regenerate
     )
-    return recs
+    return [recommendation_to_out(r) for r in recs]
 
 
 @router.get("/", response_model=List[RecommendationOut])
 def list_recommendations(
     student_id: Optional[int] = Query(None),
     category: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
     priority: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
@@ -131,129 +140,24 @@ def list_recommendations(
     current_user: User = Depends(get_current_active_user),
 ):
     """List recommendations with filtering and role-based security scoping."""
-    query = (
-        db.query(Recommendation)
-        .options(
-            joinedload(Recommendation.student).joinedload(Student.user),
-            joinedload(Recommendation.student).joinedload(Student.department),
-            joinedload(Recommendation.catalogue),
-            joinedload(Recommendation.progress_logs),
-            joinedload(Recommendation.feedback),
-            joinedload(Recommendation.created_by),
-        )
+    return RecommendationService.list_recommendations(
+        db, current_user, student_id=student_id, category=category, status=status_filter,
+        priority=priority, skip=skip, limit=limit,
     )
-
-    # Scoping for students
-    if current_user.role == "student":
-        student = db.query(Student).filter(Student.user_id == current_user.id).first()
-        if not student:
-            return []
-        query = query.filter(Recommendation.student_id == student.id)
-    elif student_id:
-        query = query.filter(Recommendation.student_id == student_id)
-
-    if category:
-        query = query.filter(Recommendation.category == category)
-    if status:
-        query = query.filter(Recommendation.status == status)
-    if priority:
-        query = query.filter(Recommendation.priority == priority)
-
-    recs = (
-        query.order_by(
-            desc(Recommendation.priority == "CRITICAL"),
-            desc(Recommendation.priority == "HIGH"),
-            desc(Recommendation.created_at),
-        )
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
-
-    out = []
-    for r in recs:
-        out.append(
-            RecommendationOut(
-                id=r.id,
-                student_id=r.student_id,
-                student_name=r.student.user.full_name if r.student and r.student.user else None,
-                student_roll=r.student.roll_number if r.student else None,
-                student_department=r.student.department.name if r.student and r.student.department else None,
-                catalogue_id=r.catalogue_id,
-                title=r.title,
-                category=r.category,
-                reason=r.reason,
-                gap_type=r.gap_type,
-                gap_detail=r.gap_detail,
-                expected_outcome=r.expected_outcome,
-                priority=r.priority,
-                resource_url=r.resource_url,
-                suggested_completion_time=r.suggested_completion_time,
-                status=r.status,
-                source=r.source,
-                created_by_id=r.created_by_id,
-                created_by_name=r.created_by.full_name if r.created_by else None,
-                mentor_approval_status=r.mentor_approval_status,
-                mentor_guidance_notes=r.mentor_guidance_notes,
-                accepted_at=r.accepted_at,
-                completed_at=r.completed_at,
-                rejected_at=r.rejected_at,
-                rejection_reason=r.rejection_reason,
-                created_at=r.created_at,
-                progress_logs=[
-                    {
-                        "id": p.id,
-                        "recommendation_id": p.recommendation_id,
-                        "status": p.status,
-                        "percent_complete": p.percent_complete,
-                        "notes": p.notes,
-                        "hours_spent": p.hours_spent,
-                        "updated_by_id": p.updated_by_id,
-                        "updated_by_name": p.updated_by.full_name if p.updated_by else None,
-                        "created_at": p.created_at,
-                    }
-                    for p in r.progress_logs
-                ],
-                feedback=(
-                    {
-                        "id": r.feedback.id,
-                        "recommendation_id": r.feedback.recommendation_id,
-                        "student_id": r.feedback.student_id,
-                        "rating": r.feedback.rating,
-                        "helpful": r.feedback.helpful,
-                        "relevance_score": r.feedback.relevance_score,
-                        "comments": r.feedback.comments,
-                        "outcome_achieved": r.feedback.outcome_achieved,
-                        "created_at": r.feedback.created_at,
-                    }
-                    if r.feedback
-                    else None
-                ),
-            )
-        )
-    return out
 
 
 # -----------------------------------------------------------------------------
 # 3. STUDENT LEARNING PATH & ROADMAP
 # -----------------------------------------------------------------------------
-@router.get("/students/{student_id}/learning-path")
+@router.get("/students/{student_id}/learning-path", response_model=StudentLearningPathOut)
 def get_student_learning_path(
     student_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve comprehensive categorized learning path (Academic vs Career)."""
-    student = db.query(Student).filter(Student.id == student_id).first()
-    if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-
-    if current_user.role == "student" and student.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: Students can only view their own learning roadmap.",
-        )
-
+    _get_student_for_caller(db, student_id, current_user,
+                            "Access denied: Students can only view their own learning roadmap.")
     return RecommendationService.get_student_learning_path(db, student_id)
 
 
@@ -268,15 +172,7 @@ def update_student_career_profile(
     current_user: User = Depends(get_current_active_user),
 ):
     """Student or mentor updates career aspirations and technical interests."""
-    student = db.query(Student).filter(Student.id == student_id).first()
-    if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-
-    if current_user.role == "student" and student.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: Students can only edit their personal career profile.",
-        )
+    student = _get_student_for_caller(db, student_id, current_user, "Access denied: Students can only edit their personal career profile.")
 
     student.career_goals = profile_in.career_goals
     student.interests = profile_in.interests
@@ -303,12 +199,7 @@ def accept_recommendation(
     current_user: User = Depends(get_current_active_user),
 ):
     """Student accepts a recommended activity into their active learning roadmap."""
-    rec = db.query(Recommendation).filter(Recommendation.id == recommendation_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found.")
-
-    if current_user.role == "student" and rec.student.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    _get_recommendation_for_caller(db, recommendation_id, current_user)
 
     updated = RecommendationService.accept_recommendation(db, recommendation_id, current_user.id)
     return {"message": "Recommendation accepted successfully.", "status": updated.status}
@@ -322,12 +213,7 @@ def reject_recommendation(
     current_user: User = Depends(get_current_active_user),
 ):
     """Student declines a recommendation with documented reason."""
-    rec = db.query(Recommendation).filter(Recommendation.id == recommendation_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found.")
-
-    if current_user.role == "student" and rec.student.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    _get_recommendation_for_caller(db, recommendation_id, current_user)
 
     updated = RecommendationService.reject_recommendation(db, recommendation_id, req.rejection_reason)
     return {"message": "Recommendation rejected.", "status": updated.status}
@@ -341,12 +227,7 @@ def update_progress(
     current_user: User = Depends(get_current_active_user),
 ):
     """Record completion progress and logged hours towards a recommendation."""
-    rec = db.query(Recommendation).filter(Recommendation.id == recommendation_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found.")
-
-    if current_user.role == "student" and rec.student.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    _get_recommendation_for_caller(db, recommendation_id, current_user)
 
     updated = RecommendationService.update_progress(
         db=db,
@@ -368,12 +249,7 @@ def submit_feedback(
     current_user: User = Depends(get_current_active_user),
 ):
     """Student submits feedback rating and review on recommendation utility."""
-    rec = db.query(Recommendation).filter(Recommendation.id == recommendation_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found.")
-
-    if current_user.role == "student" and rec.student.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    rec = _get_recommendation_for_caller(db, recommendation_id, current_user)
 
     return RecommendationService.submit_feedback(
         db=db,

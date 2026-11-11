@@ -1,30 +1,95 @@
-import csv
-from datetime import datetime, date
-from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, and_, or_
-from fastapi import HTTPException, status
+"""Intervention tracking (module 6): support cases, notes, follow-ups and their notifications.
 
+Faculty and administrators can manage any case in their scope; mentors manage cases assigned to them.
+Students see only their own cases.
+"""
+from typing import Any, Dict, List, Optional, Tuple
+
+from fastapi import HTTPException
+from sqlalchemy import desc, or_
+from sqlalchemy.orm import Session
+
+from app.core.clock import utcnow
 from app.models.intervention import (
     Intervention,
-    InterventionNote,
     InterventionFollowup,
-    Notification,
+    InterventionNote,
     InterventionStatus,
-    InterventionType,
+    Notification,
     NotificationType,
 )
-from app.models.profile import Student, Mentor
-from app.models.user import User, UserRole
+from app.models.profile import Mentor, Student
 from app.models.risk import RiskAlert
+from app.models.user import User, UserRole
 from app.schemas.intervention import (
     InterventionCreate,
-    InterventionUpdate,
-    InterventionStatusUpdate,
-    InterventionNoteCreate,
     InterventionFollowupCreate,
     InterventionFollowupUpdate,
+    InterventionNoteCreate,
+    InterventionStatusUpdate,
 )
+
+
+def intervention_summary(it: Intervention) -> Dict[str, Any]:
+    """Display-ready view of an intervention case with student, mentor and counts."""
+    student = it.student
+    mentor = it.mentor
+    assigned_by = it.assigned_by_user
+    return {
+        "id": it.id,
+        "student_id": it.student_id,
+        "student_name": student.user.full_name if student and student.user else "Unknown",
+        "student_usn": student.usn if student else "N/A",
+        "student_department": student.department.name if student and student.department else None,
+        "student_semester": student.current_semester if student else None,
+        "mentor_id": it.mentor_id,
+        "mentor_name": mentor.user.full_name if mentor and mentor.user else None,
+        "assigned_by": it.assigned_by,
+        "assigned_by_name": assigned_by.full_name if assigned_by else None,
+        "risk_alert_id": it.risk_alert_id,
+        "title": it.title,
+        "intervention_type": it.intervention_type,
+        "priority": it.priority,
+        "status": it.status,
+        "initial_notes": it.initial_notes,
+        "target_resolution_date": it.target_resolution_date,
+        "resolved_at": it.resolved_at,
+        "resolution_summary": it.resolution_summary,
+        "created_at": it.created_at,
+        "updated_at": it.updated_at,
+        "notes_count": len(it.notes),
+        "followups_count": len(it.followups),
+    }
+
+
+def note_to_dict(note: InterventionNote) -> Dict[str, Any]:
+    return {
+        "id": note.id,
+        "intervention_id": note.intervention_id,
+        "author_id": note.author_id,
+        "author_name": note.author.full_name if note.author else "System",
+        "author_role": note.author.role if note.author else "system",
+        "note_text": note.note_text,
+        "note_type": note.note_type,
+        "created_at": note.created_at,
+    }
+
+
+def followup_to_dict(followup: InterventionFollowup) -> Dict[str, Any]:
+    mentor = followup.mentor
+    return {
+        "id": followup.id,
+        "intervention_id": followup.intervention_id,
+        "mentor_id": followup.mentor_id,
+        "mentor_name": mentor.user.full_name if mentor and mentor.user else None,
+        "scheduled_date": followup.scheduled_date,
+        "conducted_date": followup.conducted_date,
+        "followup_status": followup.followup_status,
+        "outcome_notes": followup.outcome_notes,
+        "student_feedback": followup.student_feedback,
+        "next_review_date": followup.next_review_date,
+        "created_at": followup.created_at,
+    }
 
 
 class InterventionService:
@@ -54,7 +119,7 @@ class InterventionService:
             reference_id=reference_id,
             reference_type=reference_type,
             is_read=False,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         db.add(notif)
 
@@ -69,6 +134,14 @@ class InterventionService:
         student = db.query(Student).filter(Student.id == payload.student_id).first()
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
+        # Referenced records must exist in this university (the session is tenant-scoped, so another
+        # university's mentor or alert is indistinguishable from a missing one).
+        if payload.mentor_id and not db.query(Mentor).filter(Mentor.id == payload.mentor_id).first():
+            raise HTTPException(status_code=422, detail="Mentor not found in your university.")
+        if payload.risk_alert_id:
+            alert = db.query(RiskAlert).filter(RiskAlert.id == payload.risk_alert_id).first()
+            if not alert or alert.student_id != student.id:
+                raise HTTPException(status_code=422, detail="The linked alert does not belong to this student.")
 
         # Resolve mentor: use payload mentor_id, or student's assigned mentor, or current user if mentor
         mentor_id = payload.mentor_id
@@ -90,8 +163,8 @@ class InterventionService:
             status=initial_status,
             initial_notes=payload.initial_notes,
             target_resolution_date=payload.target_resolution_date,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utcnow(),
+            updated_at=utcnow(),
         )
         db.add(intervention)
         db.flush()
@@ -103,7 +176,7 @@ class InterventionService:
                 author_id=current_user.id,
                 note_text=payload.initial_notes,
                 note_type="OBSERVATION",
-                created_at=datetime.utcnow(),
+                created_at=utcnow(),
             )
             db.add(initial_note)
 
@@ -149,16 +222,22 @@ class InterventionService:
     ) -> Intervention:
         """Transition intervention status through the full state machine."""
         intervention = db.query(Intervention).filter(Intervention.id == intervention_id).first()
+        if not intervention:
+            raise HTTPException(status_code=404, detail="Intervention not found")
         if not cls._can_manage_intervention(intervention, current_user):
             raise HTTPException(status_code=403, detail="Unauthorized to modify this intervention")
 
         old_status = intervention.status
         new_status = payload.status.upper()
+        if new_status not in {st.value for st in InterventionStatus}:
+            raise HTTPException(status_code=422, detail=f"Unknown status '{payload.status}'.")
+        if new_status == InterventionStatus.RESOLVED.value and len((payload.resolution_summary or "").strip()) < 3:
+            raise HTTPException(status_code=422, detail="Record the outcome (resolution summary) before resolving.")
         intervention.status = new_status
-        intervention.updated_at = datetime.utcnow()
+        intervention.updated_at = utcnow()
 
         if new_status in [InterventionStatus.RESOLVED.value, InterventionStatus.CLOSED.value]:
-            intervention.resolved_at = datetime.utcnow()
+            intervention.resolved_at = utcnow()
             if payload.resolution_summary:
                 intervention.resolution_summary = payload.resolution_summary
 
@@ -172,7 +251,7 @@ class InterventionService:
             author_id=current_user.id,
             note_text=summary_note,
             note_type="ACTION_ITEM" if new_status != "RESOLVED" else "COUNSELING",
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         ))
 
         # Notify student of resolution / status change
@@ -209,10 +288,10 @@ class InterventionService:
             author_id=current_user.id,
             note_text=payload.note_text,
             note_type=payload.note_type,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         db.add(note)
-        intervention.updated_at = datetime.utcnow()
+        intervention.updated_at = utcnow()
         db.commit()
         db.refresh(note)
         return note
@@ -239,7 +318,7 @@ class InterventionService:
             followup_status="SCHEDULED",
             outcome_notes=payload.outcome_notes,
             next_review_date=payload.next_review_date,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         db.add(followup)
 
@@ -255,7 +334,7 @@ class InterventionService:
                 reference_id=intervention.id,
             )
 
-        intervention.updated_at = datetime.utcnow()
+        intervention.updated_at = utcnow()
         db.commit()
         db.refresh(followup)
         return followup
@@ -275,7 +354,7 @@ class InterventionService:
 
         followup.followup_status = payload.followup_status.upper()
         if payload.followup_status.upper() == "COMPLETED":
-            followup.conducted_date = datetime.utcnow()
+            followup.conducted_date = utcnow()
         if payload.outcome_notes:
             followup.outcome_notes = payload.outcome_notes
         if payload.student_feedback:
@@ -283,7 +362,7 @@ class InterventionService:
         if payload.next_review_date:
             followup.next_review_date = payload.next_review_date
 
-        followup.intervention.updated_at = datetime.utcnow()
+        followup.intervention.updated_at = utcnow()
         db.commit()
         db.refresh(followup)
         return followup
@@ -308,19 +387,17 @@ class InterventionService:
             if not current_user.student_profile:
                 return [], 0
             query = query.filter(Intervention.student_id == current_user.student_profile.id)
-        elif current_user.role == UserRole.MENTOR.value:
-            if current_user.mentor_profile:
-                query = query.filter(
-                    or_(
-                        Intervention.mentor_id == current_user.mentor_profile.id,
-                        Intervention.student_id.in_(
-                            db.query(Student.id).filter(Student.assigned_mentor_id == current_user.mentor_profile.id)
-                        )
+        elif current_user.role == UserRole.MENTOR.value and current_user.mentor_profile:
+            query = query.filter(
+                or_(
+                    Intervention.mentor_id == current_user.mentor_profile.id,
+                    Intervention.student_id.in_(
+                        db.query(Student.id).filter(Student.assigned_mentor_id == current_user.mentor_profile.id)
                     )
                 )
-        elif current_user.role == UserRole.FACULTY.value:
-            if current_user.department_id:
-                query = query.join(Student).filter(Student.department_id == current_user.department_id)
+            )
+        # Faculty: the session's student scope (sections taught + explicitly shared students) already limits
+        # which interventions are visible, matching what they can open directly.
 
         if student_id:
             query = query.filter(Intervention.student_id == student_id)
@@ -334,38 +411,7 @@ class InterventionService:
         total = query.count()
         interventions = query.order_by(desc(Intervention.updated_at)).offset(skip).limit(limit).all()
 
-        results = []
-        for it in interventions:
-            student = it.student
-            mentor = it.mentor
-            assigned_by = it.assigned_by_user
-
-            results.append({
-                "id": it.id,
-                "student_id": it.student_id,
-                "student_name": student.user.full_name if student and student.user else "Unknown",
-                "student_usn": student.usn if student else "N/A",
-                "student_department": student.department.name if student and student.department else None,
-                "student_semester": student.current_semester if student else None,
-                "mentor_id": it.mentor_id,
-                "mentor_name": mentor.user.full_name if mentor and mentor.user else None,
-                "assigned_by": it.assigned_by,
-                "assigned_by_name": assigned_by.full_name if assigned_by else None,
-                "risk_alert_id": it.risk_alert_id,
-                "title": it.title,
-                "intervention_type": it.intervention_type,
-                "priority": it.priority,
-                "status": it.status,
-                "initial_notes": it.initial_notes,
-                "target_resolution_date": it.target_resolution_date,
-                "resolved_at": it.resolved_at,
-                "resolution_summary": it.resolution_summary,
-                "created_at": it.created_at,
-                "updated_at": it.updated_at,
-                "notes_count": len(it.notes),
-                "followups_count": len(it.followups),
-            })
-
+        results = [intervention_summary(it) for it in interventions]
         return results, total
 
     @classmethod
@@ -379,65 +425,10 @@ class InterventionService:
         if current_user.role == "student" and current_user.student_profile and it.student_id != current_user.student_profile.id:
             raise HTTPException(status_code=403, detail="Unauthorized to access this student intervention")
 
-        student = it.student
-        mentor = it.mentor
-        assigned_by = it.assigned_by_user
-
-        notes_data = []
-        for n in it.notes:
-            notes_data.append({
-                "id": n.id,
-                "intervention_id": n.intervention_id,
-                "author_id": n.author_id,
-                "author_name": n.author.full_name if n.author else "System",
-                "author_role": n.author.role if n.author else "system",
-                "note_text": n.note_text,
-                "note_type": n.note_type,
-                "created_at": n.created_at,
-            })
-
-        followups_data = []
-        for f in it.followups:
-            followups_data.append({
-                "id": f.id,
-                "intervention_id": f.intervention_id,
-                "mentor_id": f.mentor_id,
-                "mentor_name": f.mentor.user.full_name if f.mentor and f.mentor.user else None,
-                "scheduled_date": f.scheduled_date,
-                "conducted_date": f.conducted_date,
-                "followup_status": f.followup_status,
-                "outcome_notes": f.outcome_notes,
-                "student_feedback": f.student_feedback,
-                "next_review_date": f.next_review_date,
-                "created_at": f.created_at,
-            })
-
         return {
-            "id": it.id,
-            "student_id": it.student_id,
-            "student_name": student.user.full_name if student and student.user else "Unknown",
-            "student_usn": student.usn if student else "N/A",
-            "student_department": student.department.name if student and student.department else None,
-            "student_semester": student.current_semester if student else None,
-            "mentor_id": it.mentor_id,
-            "mentor_name": mentor.user.full_name if mentor and mentor.user else None,
-            "assigned_by": it.assigned_by,
-            "assigned_by_name": assigned_by.full_name if assigned_by else None,
-            "risk_alert_id": it.risk_alert_id,
-            "title": it.title,
-            "intervention_type": it.intervention_type,
-            "priority": it.priority,
-            "status": it.status,
-            "initial_notes": it.initial_notes,
-            "target_resolution_date": it.target_resolution_date,
-            "resolved_at": it.resolved_at,
-            "resolution_summary": it.resolution_summary,
-            "created_at": it.created_at,
-            "updated_at": it.updated_at,
-            "notes_count": len(it.notes),
-            "followups_count": len(it.followups),
-            "notes": notes_data,
-            "followups": followups_data,
+            **intervention_summary(it),
+            "notes": [note_to_dict(n) for n in it.notes],
+            "followups": [followup_to_dict(f) for f in it.followups],
         }
 
     @staticmethod

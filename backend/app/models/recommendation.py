@@ -1,11 +1,12 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Text, JSON
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
-class RecommendationCatalogue(Base, TimestampMixin):
+class RecommendationCatalogue(Base, TimestampMixin, TenantMixin):
     __tablename__ = "recommendation_catalogue"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -32,7 +33,7 @@ class RecommendationCatalogue(Base, TimestampMixin):
     recommendations = relationship("Recommendation", back_populates="catalogue")
 
 
-class RecommendationResource(Base, TimestampMixin):
+class RecommendationResource(Base, TimestampMixin, TenantMixin):
     __tablename__ = "recommendation_resources"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -48,7 +49,7 @@ class RecommendationResource(Base, TimestampMixin):
     catalogue = relationship("RecommendationCatalogue", back_populates="resources")
 
 
-class Recommendation(Base, TimestampMixin):
+class Recommendation(Base, TimestampMixin, TenantMixin):
     __tablename__ = "recommendations"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -78,15 +79,24 @@ class Recommendation(Base, TimestampMixin):
     student = relationship("Student", back_populates="recommendations")
     catalogue = relationship("RecommendationCatalogue", back_populates="recommendations")
     created_by = relationship("User", foreign_keys=[created_by_id])
-    progress_logs = relationship("RecommendationProgress", back_populates="recommendation", cascade="all, delete-orphan", order_by="desc(RecommendationProgress.created_at)")
-    feedback = relationship("RecommendationFeedback", back_populates="recommendation", cascade="all, delete-orphan", uselist=False)
+    progress_logs = relationship(
+        "RecommendationProgress",
+        back_populates="recommendation",
+        cascade="all, delete-orphan",
+        order_by="desc(RecommendationProgress.created_at)",
+    )
+    feedback = relationship(
+        "RecommendationFeedback", back_populates="recommendation", cascade="all, delete-orphan", uselist=False
+    )
 
 
-class RecommendationProgress(Base, TimestampMixin):
+class RecommendationProgress(Base, TimestampMixin, TenantMixin):
     __tablename__ = "recommendation_progress"
 
     id = Column(Integer, primary_key=True, index=True)
-    recommendation_id = Column(Integer, ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False, index=True)
+    recommendation_id = Column(
+        Integer, ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     status = Column(String(30), nullable=False)  # ACCEPTED, IN_PROGRESS, COMPLETED
     percent_complete = Column(Integer, default=0, nullable=False)
     notes = Column(Text, nullable=True)
@@ -98,11 +108,13 @@ class RecommendationProgress(Base, TimestampMixin):
     updated_by = relationship("User", foreign_keys=[updated_by_id])
 
 
-class RecommendationFeedback(Base, TimestampMixin):
+class RecommendationFeedback(Base, TimestampMixin, TenantMixin):
     __tablename__ = "recommendation_feedback"
 
     id = Column(Integer, primary_key=True, index=True)
-    recommendation_id = Column(Integer, ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False, index=True)
+    recommendation_id = Column(
+        Integer, ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
     rating = Column(Integer, nullable=False)  # 1 to 5
     helpful = Column(Boolean, default=True, nullable=False)

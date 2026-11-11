@@ -1,37 +1,47 @@
-from datetime import datetime, timezone, date
-from typing import List, Dict, Any, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, desc
+"""Skill gap & placement readiness (module 4).
 
-from app.models.profile import Student, Faculty
+Covers the skill catalogue, student skills and evidence, career roles, opportunities, eligibility checks
+and applications. Readiness scoring is documented on ``PlacementService.calculate_placement_readiness``;
+it is an internal indicator, not a hiring prediction.
+"""
+import logging
+from datetime import date, datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import desc, or_
+from sqlalchemy.orm import Session
+
 from app.models.academic import SubjectResult
-from app.models.student_intelligence import (
-    Skill,
-    StudentSkill,
-    Project,
-    Certification,
-)
 from app.models.placement import (
     CareerRole,
+    OpportunityRequirement,
+    PlacementOpportunity,
     RoleSkill,
     SkillEvidence,
-    PlacementOpportunity,
-    OpportunityRequirement,
     StudentApplication,
 )
+from app.models.profile import Student
 from app.models.recommendation import RecommendationCatalogue
+from app.models.student_intelligence import (
+    Certification,
+    Project,
+    Skill,
+    StudentSkill,
+)
 from app.schemas.placement import (
-    SkillEvidenceBase,
-    SkillEvidenceResponse,
-    StudentSkillDetailResponse,
     CareerRoleResponse,
-    RoleSkillResponse,
-    SkillGapItem,
-    PlacementReadinessResponse,
-    PlacementOpportunityResponse,
     OpportunityMatchForStudent,
+    PlacementOpportunityResponse,
+    PlacementReadinessResponse,
+    RoleSkillResponse,
+    SkillEvidenceBase,
+    SkillGapItem,
     StudentApplicationResponse,
 )
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_CAREER_ROLE_CODE = "SOFTWARE_DEVELOPER"
 
 PROFICIENCY_WEIGHTS = {
     "beginner": 1,
@@ -50,121 +60,442 @@ CANONICAL_ROLES_DATA = [
     {
         "code": "SOFTWARE_DEVELOPER",
         "title": "Software Developer",
-        "description": "Designs, develops, tests, and deploys scalable software systems using core object-oriented principles, algorithms, and modular architecture.",
+        "description": (
+            "Designs, develops, tests, and deploys scalable software systems using core object-oriented "
+            "principles, algorithms, and modular architecture."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "8-14 LPA",
         "industry_demand": "Critical",
         "skills": [
-            {"name": "Python", "category": "programming", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Java", "category": "programming", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": False},
-            {"name": "Data Structures", "category": "problem_solving", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Algorithms", "category": "problem_solving", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "SQL", "category": "database", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Git Collaboration", "category": "teamwork", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "System Design", "category": "problem_solving", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
+            {
+                "name": "Python",
+                "category": "programming",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Java",
+                "category": "programming",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": False,
+            },
+            {
+                "name": "Data Structures",
+                "category": "problem_solving",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Algorithms",
+                "category": "problem_solving",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "SQL",
+                "category": "database",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Git Collaboration",
+                "category": "teamwork",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "System Design",
+                "category": "problem_solving",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
         ],
     },
     {
         "code": "FULL_STACK_DEVELOPER",
         "title": "Full Stack Developer",
-        "description": "Builds end-to-end responsive web applications spanning modern frontend frameworks, backend microservices, relational databases, and containerized deployment.",
+        "description": (
+            "Builds end-to-end responsive web applications spanning modern frontend frameworks, backend "
+            "microservices, relational databases, and containerized deployment."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "9-16 LPA",
         "industry_demand": "Critical",
         "skills": [
-            {"name": "React", "category": "framework", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "TypeScript", "category": "programming", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Node.js", "category": "framework", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Python", "category": "programming", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "PostgreSQL", "category": "database", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Docker", "category": "cloud", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
-            {"name": "REST APIs", "category": "framework", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Git Collaboration", "category": "teamwork", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
+            {
+                "name": "React",
+                "category": "framework",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "TypeScript",
+                "category": "programming",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Node.js",
+                "category": "framework",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Python",
+                "category": "programming",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "PostgreSQL",
+                "category": "database",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Docker",
+                "category": "cloud",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
+            {
+                "name": "REST APIs",
+                "category": "framework",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Git Collaboration",
+                "category": "teamwork",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
         ],
     },
     {
         "code": "DATA_ANALYST",
         "title": "Data Analyst",
-        "description": "Translates complex institutional and enterprise datasets into actionable intelligence through exploratory analysis, SQL transformations, and interactive BI dashboards.",
+        "description": (
+            "Translates complex institutional and enterprise datasets into actionable intelligence through "
+            "exploratory analysis, SQL transformations, and interactive BI dashboards."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "6-11 LPA",
         "industry_demand": "High",
         "skills": [
-            {"name": "SQL", "category": "database", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Python", "category": "programming", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Pandas", "category": "data_science", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Tableau", "category": "data_science", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": False},
-            {"name": "Data Visualization", "category": "data_science", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Statistics", "category": "data_science", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Technical Writing", "category": "communication", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
+            {
+                "name": "SQL",
+                "category": "database",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Python",
+                "category": "programming",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Pandas",
+                "category": "data_science",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Tableau",
+                "category": "data_science",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": False,
+            },
+            {
+                "name": "Data Visualization",
+                "category": "data_science",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Statistics",
+                "category": "data_science",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Technical Writing",
+                "category": "communication",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
         ],
     },
     {
         "code": "DATA_SCIENTIST",
         "title": "Data Scientist",
-        "description": "Applies statistical modeling, exploratory analytics, feature engineering, and predictive algorithms to discover patterns and build predictive decision systems.",
+        "description": (
+            "Applies statistical modeling, exploratory analytics, feature engineering, and predictive "
+            "algorithms to discover patterns and build predictive decision systems."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "10-18 LPA",
         "industry_demand": "High",
         "skills": [
-            {"name": "Python", "category": "programming", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Statistics", "category": "data_science", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Machine Learning", "category": "artificial_intelligence", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "SQL", "category": "database", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Pandas", "category": "data_science", "min_proficiency": "Advanced", "importance": "CORE", "is_mandatory": True},
-            {"name": "Scikit-Learn", "category": "data_science", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Deep Learning", "category": "artificial_intelligence", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
+            {
+                "name": "Python",
+                "category": "programming",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Statistics",
+                "category": "data_science",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Machine Learning",
+                "category": "artificial_intelligence",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "SQL",
+                "category": "database",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Pandas",
+                "category": "data_science",
+                "min_proficiency": "Advanced",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Scikit-Learn",
+                "category": "data_science",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Deep Learning",
+                "category": "artificial_intelligence",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
         ],
     },
     {
         "code": "AI_ML_ENGINEER",
         "title": "AI/ML Engineer",
-        "description": "Architects, trains, fine-tunes, and serves deep neural networks, computer vision pipelines, and large language models for production-scale inference.",
+        "description": (
+            "Architects, trains, fine-tunes, and serves deep neural networks, computer vision pipelines, and "
+            "large language models for production-scale inference."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "12-22 LPA",
         "industry_demand": "Critical",
         "skills": [
-            {"name": "Python", "category": "programming", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Machine Learning", "category": "artificial_intelligence", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Deep Learning", "category": "artificial_intelligence", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "PyTorch", "category": "framework", "min_proficiency": "Intermediate", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Computer Vision", "category": "artificial_intelligence", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": False},
-            {"name": "NLP", "category": "artificial_intelligence", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": False},
-            {"name": "Docker", "category": "cloud", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "System Design", "category": "problem_solving", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
+            {
+                "name": "Python",
+                "category": "programming",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Machine Learning",
+                "category": "artificial_intelligence",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Deep Learning",
+                "category": "artificial_intelligence",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "PyTorch",
+                "category": "framework",
+                "min_proficiency": "Intermediate",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Computer Vision",
+                "category": "artificial_intelligence",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": False,
+            },
+            {
+                "name": "NLP",
+                "category": "artificial_intelligence",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": False,
+            },
+            {
+                "name": "Docker",
+                "category": "cloud",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "System Design",
+                "category": "problem_solving",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
         ],
     },
     {
         "code": "CLOUD_ENGINEER",
         "title": "Cloud Solutions Engineer",
-        "description": "Deploys, manages, and secures multi-region infrastructure as code across public cloud providers (AWS, GCP, Azure) using Kubernetes and CI/CD pipelines.",
+        "description": (
+            "Deploys, manages, and secures multi-region infrastructure as code across public cloud providers "
+            "(AWS, GCP, Azure) using Kubernetes and CI/CD pipelines."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "10-18 LPA",
         "industry_demand": "Critical",
         "skills": [
-            {"name": "Linux", "category": "cloud", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Cloud Computing", "category": "cloud", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "AWS", "category": "cloud", "min_proficiency": "Intermediate", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Docker", "category": "cloud", "min_proficiency": "Advanced", "importance": "CORE", "is_mandatory": True},
-            {"name": "Kubernetes", "category": "cloud", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Terraform", "category": "cloud", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
-            {"name": "Network Security", "category": "cybersecurity", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
+            {
+                "name": "Linux",
+                "category": "cloud",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Cloud Computing",
+                "category": "cloud",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "AWS",
+                "category": "cloud",
+                "min_proficiency": "Intermediate",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Docker",
+                "category": "cloud",
+                "min_proficiency": "Advanced",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Kubernetes",
+                "category": "cloud",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Terraform",
+                "category": "cloud",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
+            {
+                "name": "Network Security",
+                "category": "cybersecurity",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
         ],
     },
     {
         "code": "CYBERSECURITY_ANALYST",
         "title": "Cybersecurity Analyst",
-        "description": "Protects digital campus networks and enterprise services by conducting threat vulnerability assessments, continuous log monitoring, encryption, and incidence mitigation.",
+        "description": (
+            "Protects digital campus networks and enterprise services by conducting threat vulnerability "
+            "assessments, continuous log monitoring, encryption, and incidence mitigation."
+        ),
         "min_experience_level": "Entry Level",
         "average_salary_range": "9-16 LPA",
         "industry_demand": "High",
         "skills": [
-            {"name": "Network Security", "category": "cybersecurity", "min_proficiency": "Advanced", "importance": "CRITICAL", "is_mandatory": True},
-            {"name": "Linux", "category": "cloud", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Cryptography", "category": "cybersecurity", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
-            {"name": "Ethical Hacking", "category": "cybersecurity", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": False},
-            {"name": "SOC Analysis", "category": "cybersecurity", "min_proficiency": "Intermediate", "importance": "PREFERRED", "is_mandatory": False},
-            {"name": "Python", "category": "programming", "min_proficiency": "Intermediate", "importance": "CORE", "is_mandatory": True},
+            {
+                "name": "Network Security",
+                "category": "cybersecurity",
+                "min_proficiency": "Advanced",
+                "importance": "CRITICAL",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Linux",
+                "category": "cloud",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Cryptography",
+                "category": "cybersecurity",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
+            {
+                "name": "Ethical Hacking",
+                "category": "cybersecurity",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": False,
+            },
+            {
+                "name": "SOC Analysis",
+                "category": "cybersecurity",
+                "min_proficiency": "Intermediate",
+                "importance": "PREFERRED",
+                "is_mandatory": False,
+            },
+            {
+                "name": "Python",
+                "category": "programming",
+                "min_proficiency": "Intermediate",
+                "importance": "CORE",
+                "is_mandatory": True,
+            },
         ],
     },
 ]
@@ -207,7 +538,10 @@ CANONICAL_OPPORTUNITIES_DATA = [
         "eligible_semesters": [5, 6, 7],
         "application_deadline": date(2026, 11, 30),
         "open_positions": 12,
-        "description": "Six-month summer internship with Azure Machine Learning team working on LLM fine-tuning, retrieval agents, and automated inference optimization.",
+        "description": (
+            "Six-month summer internship with Azure Machine Learning team working on LLM fine-tuning, "
+            "retrieval agents, and automated inference optimization."
+        ),
         "skills": [
             {"name": "Python", "min_proficiency": "Intermediate", "is_mandatory": True},
             {"name": "Machine Learning", "min_proficiency": "Intermediate", "is_mandatory": True},
@@ -283,9 +617,131 @@ CANONICAL_OPPORTUNITIES_DATA = [
 ]
 
 
+def readiness_tier(score: float, mandatory_skills_met: bool) -> str:
+    """READY needs ≥ 85 and every mandatory skill met; then NEAR_READY ≥ 70, DEVELOPING ≥ 50, else EARLY_STAGE."""
+    if score >= 85.0 and mandatory_skills_met:
+        return "READY"
+    if score >= 70.0:
+        return "NEAR_READY"
+    if score >= 50.0:
+        return "DEVELOPING"
+    return "EARLY_STAGE"
+
+
+def role_code_for_goal(goal: Optional[str]) -> str:
+    """Map a free-text career goal ("AI/ML Engineer") to a career-role code ("AI_ML_ENGINEER")."""
+    if not goal:
+        return DEFAULT_CAREER_ROLE_CODE
+    return goal.replace(" ", "_").replace("/", "_").upper()
+
+
+def default_role_code_for_student(student: Optional[Student]) -> str:
+    """Readiness is measured against the student's first declared career goal, else the default role."""
+    goals = student.career_goals if student else None
+    return role_code_for_goal(goals[0]) if goals else DEFAULT_CAREER_ROLE_CODE
+
+
+def opportunity_requirements(opportunity: PlacementOpportunity) -> List[Dict[str, Any]]:
+    return [
+        {
+            "skill_name": r.skill.name if r.skill else "",
+            "min_proficiency": r.min_proficiency,
+            "is_mandatory": r.is_mandatory,
+        }
+        for r in opportunity.requirements
+    ]
+
+
+def opportunity_fields(opportunity: PlacementOpportunity) -> Dict[str, Any]:
+    """Fields shared by every opportunity response (listing and per-student matching)."""
+    return {
+        "id": opportunity.id,
+        "company_name": opportunity.company_name,
+        "title": opportunity.title,
+        "opportunity_type": opportunity.opportunity_type,
+        "role_id": opportunity.role_id,
+        "role_title": opportunity.role.title if opportunity.role else None,
+        "location": opportunity.location,
+        "work_mode": opportunity.work_mode,
+        "ctc_stipend": opportunity.ctc_stipend,
+        "min_cgpa": opportunity.min_cgpa,
+        "max_backlogs": opportunity.max_backlogs,
+        "min_attendance": opportunity.min_attendance,
+        "eligible_departments": opportunity.eligible_departments,
+        "eligible_semesters": opportunity.eligible_semesters,
+        "application_deadline": opportunity.application_deadline,
+        "open_positions": opportunity.open_positions,
+        "description": opportunity.description,
+        "status": opportunity.status,
+        "requirements": opportunity_requirements(opportunity),
+        "application_count": len(opportunity.applications),
+        "created_at": opportunity.created_at,
+    }
+
+
+def opportunity_to_response(opportunity: PlacementOpportunity) -> PlacementOpportunityResponse:
+    return PlacementOpportunityResponse(**opportunity_fields(opportunity))
+
+
+def career_role_to_response(role: CareerRole) -> CareerRoleResponse:
+    return CareerRoleResponse(
+        id=role.id,
+        code=role.code,
+        title=role.title,
+        department_id=role.department_id,
+        department_code=role.department.code if role.department else None,
+        description=role.description,
+        min_experience_level=role.min_experience_level,
+        average_salary_range=role.average_salary_range,
+        industry_demand=role.industry_demand,
+        is_active=role.is_active,
+        skills=[
+            RoleSkillResponse(
+                id=rs.id,
+                role_id=rs.role_id,
+                skill_id=rs.skill_id,
+                skill_name=rs.skill.name if rs.skill else "",
+                category=rs.skill.category if rs.skill else "programming",
+                min_proficiency=rs.min_proficiency,
+                importance=rs.importance,
+                importance_weight=rs.importance_weight,
+                is_mandatory=rs.is_mandatory,
+            )
+            for rs in role.role_skills
+        ],
+        created_at=role.created_at,
+    )
+
+
+def application_to_response(application: StudentApplication) -> StudentApplicationResponse:
+    opportunity = application.opportunity
+    student = application.student
+    return StudentApplicationResponse(
+        id=application.id,
+        opportunity_id=application.opportunity_id,
+        opportunity_title=opportunity.title if opportunity else "",
+        company_name=opportunity.company_name if opportunity else "",
+        opportunity_type=opportunity.opportunity_type if opportunity else "JOB",
+        ctc_stipend=opportunity.ctc_stipend if opportunity else "",
+        location=opportunity.location if opportunity else "",
+        deadline=opportunity.application_deadline if opportunity else datetime.now(timezone.utc).date(),
+        student_id=application.student_id,
+        student_name=student.user.full_name if student and student.user and student.user.full_name else "Student",
+        student_srn=(student.srn or student.usn) if student else None,
+        status=application.status,
+        applied_at=application.applied_at,
+        resume_url=application.resume_url,
+        cover_notes=application.cover_notes,
+        reviewer_notes=application.reviewer_notes,
+        readiness_score_at_application=application.readiness_score_at_application,
+    )
+
+
 class PlacementService:
     @staticmethod
-    def get_or_create_skill(db: Session, name: str, category: str = "programming", description: Optional[str] = None) -> Skill:
+    def get_or_create_skill(
+        db: Session, name: str, category: str = "programming", description: Optional[str] = None
+    ) -> Skill:
         skill = db.query(Skill).filter(Skill.name.ilike(name.strip())).first()
         if not skill:
             skill = Skill(name=name.strip(), category=category.lower(), description=description)
@@ -316,10 +772,9 @@ class PlacementService:
             # Ensure role skills exist
             for sdata in rdata["skills"]:
                 skill = PlacementService.get_or_create_skill(db, sdata["name"], sdata["category"])
-                existing_rs = db.query(RoleSkill).filter(
-                    RoleSkill.role_id == role.id,
-                    RoleSkill.skill_id == skill.id
-                ).first()
+                existing_rs = (
+                    db.query(RoleSkill).filter(RoleSkill.role_id == role.id, RoleSkill.skill_id == skill.id).first()
+                )
                 if not existing_rs:
                     importance = sdata.get("importance", "CORE")
                     weight = IMPORTANCE_WEIGHTS.get(importance, 2.0)
@@ -340,10 +795,14 @@ class PlacementService:
     def seed_canonical_opportunities(db: Session) -> List[PlacementOpportunity]:
         seeded_opps = []
         for odata in CANONICAL_OPPORTUNITIES_DATA:
-            opp = db.query(PlacementOpportunity).filter(
-                PlacementOpportunity.company_name == odata["company_name"],
-                PlacementOpportunity.title == odata["title"]
-            ).first()
+            opp = (
+                db.query(PlacementOpportunity)
+                .filter(
+                    PlacementOpportunity.company_name == odata["company_name"],
+                    PlacementOpportunity.title == odata["title"],
+                )
+                .first()
+            )
 
             role = db.query(CareerRole).filter(CareerRole.code == odata["role_code"]).first()
 
@@ -392,13 +851,14 @@ class PlacementService:
         skill_name: str,
         category: str = "programming",
         proficiency_level: str = "Intermediate",
-        evidence: Optional[SkillEvidenceBase] = None
+        evidence: Optional[SkillEvidenceBase] = None,
     ) -> StudentSkill:
         skill = PlacementService.get_or_create_skill(db, skill_name, category)
-        student_skill = db.query(StudentSkill).filter(
-            StudentSkill.student_id == student_id,
-            StudentSkill.skill_id == skill.id
-        ).first()
+        student_skill = (
+            db.query(StudentSkill)
+            .filter(StudentSkill.student_id == student_id, StudentSkill.skill_id == skill.id)
+            .first()
+        )
 
         if not student_skill:
             student_skill = StudentSkill(
@@ -434,10 +894,7 @@ class PlacementService:
 
     @staticmethod
     def submit_skill_evidence(
-        db: Session,
-        student_id: int,
-        student_skill_id: int,
-        evidence: SkillEvidenceBase
+        db: Session, student_id: int, student_skill_id: int, evidence: SkillEvidenceBase
     ) -> SkillEvidence:
         ev = SkillEvidence(
             student_skill_id=student_skill_id,
@@ -457,11 +914,7 @@ class PlacementService:
 
     @staticmethod
     def verify_skill_evidence(
-        db: Session,
-        evidence_id: int,
-        verifier_user_id: int,
-        verification_status: str,
-        feedback: Optional[str] = None
+        db: Session, evidence_id: int, verifier_user_id: int, verification_status: str, feedback: Optional[str] = None
     ) -> SkillEvidence:
         ev = db.query(SkillEvidence).filter(SkillEvidence.id == evidence_id).first()
         if not ev:
@@ -490,38 +943,126 @@ class PlacementService:
             evidences = db.query(SkillEvidence).filter(SkillEvidence.student_skill_id == s.id).all()
             ev_list = []
             for ev in evidences:
-                ev_list.append({
-                    "id": ev.id,
-                    "student_skill_id": ev.student_skill_id,
-                    "student_id": ev.student_id,
-                    "evidence_type": ev.evidence_type,
-                    "title": ev.title,
-                    "url": ev.url,
-                    "description": ev.description,
-                    "project_id": ev.project_id,
-                    "certification_id": ev.certification_id,
-                    "verification_status": ev.verification_status,
-                    "verified_by_user_id": ev.verified_by_user_id,
-                    "verified_at": ev.verified_at,
-                    "verification_feedback": ev.verification_feedback,
-                    "created_at": ev.created_at,
-                })
+                ev_list.append(
+                    {
+                        "id": ev.id,
+                        "student_skill_id": ev.student_skill_id,
+                        "student_id": ev.student_id,
+                        "evidence_type": ev.evidence_type,
+                        "title": ev.title,
+                        "url": ev.url,
+                        "description": ev.description,
+                        "project_id": ev.project_id,
+                        "certification_id": ev.certification_id,
+                        "verification_status": ev.verification_status,
+                        "verified_by_user_id": ev.verified_by_user_id,
+                        "verified_at": ev.verified_at,
+                        "verification_feedback": ev.verification_feedback,
+                        "created_at": ev.created_at,
+                    }
+                )
 
-            results.append({
-                "id": s.id,
-                "student_id": s.student_id,
-                "skill_id": s.skill_id,
-                "skill_name": s.skill.name if s.skill else "",
-                "category": s.skill.category if s.skill else "programming",
-                "proficiency_level": s.proficiency_level,
-                "is_verified": s.is_verified,
-                "evidence_count": len(ev_list),
-                "evidences": ev_list,
-                "created_at": s.created_at,
-            })
+            results.append(
+                {
+                    "id": s.id,
+                    "student_id": s.student_id,
+                    "skill_id": s.skill_id,
+                    "skill_name": s.skill.name if s.skill else "",
+                    "category": s.skill.category if s.skill else "programming",
+                    "proficiency_level": s.proficiency_level,
+                    "is_verified": s.is_verified,
+                    "evidence_count": len(ev_list),
+                    "evidences": ev_list,
+                    "created_at": s.created_at,
+                }
+            )
         return results
 
     # --- Career Roles CRUD ---
+    @staticmethod
+    def create_career_role(db: Session, payload: Any) -> CareerRole:
+        """Create a career role and its skill benchmarks. Raises ValueError if the code is taken."""
+        code = payload.code.upper()
+        if db.query(CareerRole).filter(CareerRole.code == code).first():
+            raise ValueError(f"Career role code '{payload.code}' already exists.")
+        role = CareerRole(
+            code=code,
+            title=payload.title,
+            department_id=payload.department_id,
+            description=payload.description,
+            min_experience_level=payload.min_experience_level,
+            average_salary_range=payload.average_salary_range,
+            industry_demand=payload.industry_demand,
+            is_active=payload.is_active,
+        )
+        db.add(role)
+        db.commit()
+        db.refresh(role)
+        for item in payload.required_skills:
+            skill = PlacementService.get_or_create_skill(db, item.skill_name, item.category or "programming")
+            db.add(
+                RoleSkill(
+                    role_id=role.id,
+                    skill_id=skill.id,
+                    min_proficiency=item.min_proficiency,
+                    importance=item.importance,
+                    importance_weight=item.importance_weight,
+                    is_mandatory=item.is_mandatory,
+                )
+            )
+        db.commit()
+        return PlacementService.get_career_role_by_id_or_code(db, role.id)
+
+    @staticmethod
+    def create_opportunity(db: Session, payload: Any, created_by_user_id: int) -> PlacementOpportunity:
+        """Create a recruitment drive or internship with its skill requirements."""
+        opp = PlacementOpportunity(
+            company_name=payload.company_name,
+            title=payload.title,
+            opportunity_type=payload.opportunity_type,
+            role_id=payload.role_id,
+            location=payload.location,
+            work_mode=payload.work_mode,
+            ctc_stipend=payload.ctc_stipend,
+            min_cgpa=payload.min_cgpa,
+            max_backlogs=payload.max_backlogs,
+            min_attendance=payload.min_attendance,
+            eligible_departments=payload.eligible_departments,
+            eligible_semesters=payload.eligible_semesters,
+            application_deadline=payload.application_deadline,
+            open_positions=payload.open_positions,
+            description=payload.description,
+            status=payload.status,
+            created_by_user_id=created_by_user_id,
+        )
+        db.add(opp)
+        db.commit()
+        db.refresh(opp)
+        for req_in in payload.requirements:
+            skill = PlacementService.get_or_create_skill(db, req_in.skill_name)
+            db.add(
+                OpportunityRequirement(
+                    opportunity_id=opp.id,
+                    skill_id=skill.id,
+                    min_proficiency=req_in.min_proficiency,
+                    is_mandatory=req_in.is_mandatory,
+                )
+            )
+        db.commit()
+        db.refresh(opp)
+        return opp
+
+    @staticmethod
+    def list_applications(
+        db: Session, *, student_id: Optional[int] = None, opportunity_id: Optional[int] = None
+    ) -> List[StudentApplication]:
+        q = db.query(StudentApplication)
+        if student_id:
+            q = q.filter(StudentApplication.student_id == student_id)
+        if opportunity_id:
+            q = q.filter(StudentApplication.opportunity_id == opportunity_id)
+        return q.order_by(StudentApplication.applied_at.desc()).all()
+
     @staticmethod
     def get_career_roles(db: Session, is_active: Optional[bool] = None) -> List[CareerRole]:
         q = db.query(CareerRole)
@@ -537,11 +1078,17 @@ class PlacementService:
 
     # --- Skill Gap & Readiness Calculation Engine ---
     @staticmethod
-    def calculate_placement_readiness(
-        db: Session,
-        student_id: int,
-        role_identifier: Any
-    ) -> PlacementReadinessResponse:
+    def calculate_placement_readiness(db: Session, student_id: int, role_identifier: Any) -> PlacementReadinessResponse:
+        """Explainable readiness of one student for one career role (an internal indicator, not a prediction).
+
+        Each skill the role requires carries a weight (its ``importance_weight``, else CRITICAL 3 / CORE 2 /
+        PREFERRED 1). A recorded skill at or above the required proficiency earns the full weight; a lower
+        level earns a share proportional to the proficiency gap (never less than 20%); a missing skill earns
+        nothing. Unverified skills still count but are reported so evidence can be requested.
+
+        ``readiness_score`` = earned weight / total weight × 100, and ``readiness_tier`` follows
+        :func:`readiness_tier`. Unknown role identifiers fall back to the first configured role.
+        """
         student = db.query(Student).filter(Student.id == student_id).first()
         if not student:
             raise ValueError(f"Student {student_id} not found")
@@ -606,11 +1153,15 @@ class PlacementService:
                     earned_weight += weight
                     matched_count += 1
                     status = "REQUIRES_VERIFICATION" if not is_ver else "MATCHED"
-                    suggested_imp = "Verified competency meets role benchmark." if is_ver else "Submit project or certification evidence to verify proficiency."
+                    suggested_imp = (
+                        "Verified competency meets role benchmark."
+                        if is_ver
+                        else "Submit project or certification evidence to verify proficiency."
+                    )
                 else:
                     # Partial credit proportional to proficiency shortfall
                     partial_ratio = max(0.2, st_val / float(req_val))
-                    earned_weight += (weight * partial_ratio)
+                    earned_weight += weight * partial_ratio
                     below_count += 1
                     status = "BELOW_PROFICIENCY"
                     if rs.is_mandatory:
@@ -627,81 +1178,50 @@ class PlacementService:
             # Find matching catalogue resource
             matched_cat = None
             for cat in catalogue_items:
-                if (cat.required_skill and cat.required_skill.lower() == s_name.lower()) or (s_name.lower() in cat.title.lower()):
+                if (cat.required_skill and cat.required_skill.lower() == s_name.lower()) or (
+                    s_name.lower() in cat.title.lower()
+                ):
                     matched_cat = cat
                     break
 
-            gap_items.append(SkillGapItem(
-                skill_name=s_name,
-                category=s_cat,
-                status=status,
-                required_proficiency=req_prof,
-                student_proficiency=st_info["proficiency"] if st_info else None,
-                required_level_val=req_val,
-                student_level_val=st_info["proficiency_val"] if st_info else 0,
-                importance=rs.importance,
-                importance_weight=weight,
-                is_mandatory=rs.is_mandatory,
-                is_verified=st_info["is_verified"] if st_info else False,
-                evidence_count=st_info["evidence_count"] if st_info else 0,
-                suggested_improvement=suggested_imp,
-                recommended_catalog_item_id=matched_cat.id if matched_cat else None,
-                recommended_resource_url=matched_cat.resource_url if matched_cat else None,
-            ))
+            gap_items.append(
+                SkillGapItem(
+                    skill_name=s_name,
+                    category=s_cat,
+                    status=status,
+                    required_proficiency=req_prof,
+                    student_proficiency=st_info["proficiency"] if st_info else None,
+                    required_level_val=req_val,
+                    student_level_val=st_info["proficiency_val"] if st_info else 0,
+                    importance=rs.importance,
+                    importance_weight=weight,
+                    is_mandatory=rs.is_mandatory,
+                    is_verified=st_info["is_verified"] if st_info else False,
+                    evidence_count=st_info["evidence_count"] if st_info else 0,
+                    suggested_improvement=suggested_imp,
+                    recommended_catalog_item_id=matched_cat.id if matched_cat else None,
+                    recommended_resource_url=matched_cat.resource_url if matched_cat else None,
+                )
+            )
 
         # Overall readiness score
         readiness_score = round((earned_weight / total_weight * 100.0), 1) if total_weight > 0 else 0.0
         skill_coverage = round((matched_count / float(len(role_skills)) * 100.0), 1) if role_skills else 0.0
 
-        # Tier classification
-        if readiness_score >= 85.0 and mandatory_all_met:
-            tier = "READY"
-        elif readiness_score >= 70.0:
-            tier = "NEAR_READY"
-        elif readiness_score >= 50.0:
-            tier = "DEVELOPING"
-        else:
-            tier = "EARLY_STAGE"
+        tier = readiness_tier(readiness_score, mandatory_all_met)
 
         # Projects & Certifications summary
         projects = db.query(Project).filter(Project.student_id == student_id).all()
         certs = db.query(Certification).filter(Certification.student_id == student_id).all()
 
         # Backlogs count
-        backlog_results = db.query(SubjectResult).filter(
-            SubjectResult.student_id == student_id,
-            SubjectResult.is_backlog == True
-        ).all()
-
-        # Build role response
-        role_skills_res = []
-        for rs in role.role_skills:
-            role_skills_res.append(RoleSkillResponse(
-                id=rs.id,
-                role_id=rs.role_id,
-                skill_id=rs.skill_id,
-                skill_name=rs.skill.name if rs.skill else "",
-                category=rs.skill.category if rs.skill else "programming",
-                min_proficiency=rs.min_proficiency,
-                importance=rs.importance,
-                importance_weight=rs.importance_weight,
-                is_mandatory=rs.is_mandatory,
-            ))
-
-        role_res = CareerRoleResponse(
-            id=role.id,
-            code=role.code,
-            title=role.title,
-            department_id=role.department_id,
-            department_code=role.department.code if role.department else None,
-            description=role.description,
-            min_experience_level=role.min_experience_level,
-            average_salary_range=role.average_salary_range,
-            industry_demand=role.industry_demand,
-            is_active=role.is_active,
-            skills=role_skills_res,
-            created_at=role.created_at,
+        backlog_results = (
+            db.query(SubjectResult)
+            .filter(SubjectResult.student_id == student_id, SubjectResult.is_backlog.is_(True))
+            .all()
         )
+
+        role_res = career_role_to_response(role)
 
         user_name = student.user.full_name if (student.user and student.user.full_name) else "Student"
 
@@ -740,10 +1260,7 @@ class PlacementService:
     # --- Opportunities & Applications ---
     @staticmethod
     def list_opportunities(
-        db: Session,
-        opportunity_type: Optional[str] = None,
-        status: Optional[str] = None,
-        search: Optional[str] = None
+        db: Session, opportunity_type: Optional[str] = None, status: Optional[str] = None, search: Optional[str] = None
     ) -> List[PlacementOpportunity]:
         q = db.query(PlacementOpportunity)
         if opportunity_type:
@@ -752,18 +1269,17 @@ class PlacementService:
             q = q.filter(PlacementOpportunity.status == status)
         if search:
             s = f"%{search}%"
-            q = q.filter(or_(
-                PlacementOpportunity.company_name.ilike(s),
-                PlacementOpportunity.title.ilike(s),
-                PlacementOpportunity.location.ilike(s),
-            ))
+            q = q.filter(
+                or_(
+                    PlacementOpportunity.company_name.ilike(s),
+                    PlacementOpportunity.title.ilike(s),
+                    PlacementOpportunity.location.ilike(s),
+                )
+            )
         return q.order_by(desc(PlacementOpportunity.created_at)).all()
 
     @staticmethod
-    def get_matching_opportunities_for_student(
-        db: Session,
-        student_id: int
-    ) -> List[OpportunityMatchForStudent]:
+    def get_matching_opportunities_for_student(db: Session, student_id: int) -> List[OpportunityMatchForStudent]:
         student = db.query(Student).filter(Student.id == student_id).first()
         if not student:
             raise ValueError(f"Student {student_id} not found")
@@ -774,80 +1290,60 @@ class PlacementService:
         app_map = {app.opportunity_id: app.status for app in applications}
 
         # Backlogs count
-        backlogs = db.query(SubjectResult).filter(
-            SubjectResult.student_id == student_id,
-            SubjectResult.is_backlog == True
-        ).count()
+        backlogs = (
+            db.query(SubjectResult)
+            .filter(SubjectResult.student_id == student_id, SubjectResult.is_backlog.is_(True))
+            .count()
+        )
+
+        readiness_by_role: Dict[str, float] = {}  # several opportunities often target the same role
 
         results = []
         for opp in opps:
-            # Check eligibility
             cgpa_ok = student.cgpa >= opp.min_cgpa
             backlogs_ok = backlogs <= opp.max_backlogs
             attendance_ok = student.attendance_percentage >= opp.min_attendance
             dept_ok = dept_code in (opp.eligible_departments or [])
             sem_ok = student.current_semester in (opp.eligible_semesters or [])
-
             is_eligible = cgpa_ok and backlogs_ok and attendance_ok and dept_ok and sem_ok
 
-            # Readiness score calculation for role
             readiness_score = 0.0
             if opp.role_id:
-                try:
-                    readiness = PlacementService.calculate_placement_readiness(db, student_id, opp.role_id)
-                    readiness_score = readiness.readiness_score
-                except Exception:
-                    readiness_score = 65.0
+                role_code = opp.role.code if opp.role else None
+                if role_code not in readiness_by_role:
+                    try:
+                        readiness_by_role[role_code] = PlacementService.calculate_placement_readiness(
+                            db, student_id, role_code
+                        ).readiness_score
+                    except Exception:
+                        # Never invent a score when it cannot be calculated.
+                        logger.warning("Readiness calculation failed for role %s", role_code, exc_info=True)
+                        readiness_by_role[role_code] = 0.0
+                readiness_score = readiness_by_role[role_code]
 
-            req_list = []
-            for r in opp.requirements:
-                req_list.append({
-                    "skill_name": r.skill.name if r.skill else "",
-                    "min_proficiency": r.min_proficiency,
-                    "is_mandatory": r.is_mandatory,
-                })
-
-            results.append(OpportunityMatchForStudent(
-                id=opp.id,
-                company_name=opp.company_name,
-                title=opp.title,
-                opportunity_type=opp.opportunity_type,
-                role_id=opp.role_id,
-                role_title=opp.role.title if opp.role else None,
-                location=opp.location,
-                work_mode=opp.work_mode,
-                ctc_stipend=opp.ctc_stipend,
-                min_cgpa=opp.min_cgpa,
-                max_backlogs=opp.max_backlogs,
-                min_attendance=opp.min_attendance,
-                eligible_departments=opp.eligible_departments,
-                eligible_semesters=opp.eligible_semesters,
-                application_deadline=opp.application_deadline,
-                open_positions=opp.open_positions,
-                description=opp.description,
-                status=opp.status,
-                requirements=req_list,
-                application_count=len(opp.applications),
-                created_at=opp.created_at,
-                is_eligible=is_eligible,
-                eligibility_breakdown={
-                    "cgpa_eligible": cgpa_ok,
-                    "student_cgpa": student.cgpa,
-                    "min_cgpa": opp.min_cgpa,
-                    "backlogs_eligible": backlogs_ok,
-                    "student_backlogs": backlogs,
-                    "max_backlogs": opp.max_backlogs,
-                    "attendance_eligible": attendance_ok,
-                    "student_attendance": student.attendance_percentage,
-                    "min_attendance": opp.min_attendance,
-                    "department_eligible": dept_ok,
-                    "student_department": dept_code,
-                    "semester_eligible": sem_ok,
-                    "student_semester": student.current_semester,
-                },
-                readiness_score=readiness_score,
-                application_status=app_map.get(opp.id),
-            ))
+            results.append(
+                OpportunityMatchForStudent(
+                    **opportunity_fields(opp),
+                    is_eligible=is_eligible,
+                    eligibility_breakdown={
+                        "cgpa_eligible": cgpa_ok,
+                        "student_cgpa": student.cgpa,
+                        "min_cgpa": opp.min_cgpa,
+                        "backlogs_eligible": backlogs_ok,
+                        "student_backlogs": backlogs,
+                        "max_backlogs": opp.max_backlogs,
+                        "attendance_eligible": attendance_ok,
+                        "student_attendance": student.attendance_percentage,
+                        "min_attendance": opp.min_attendance,
+                        "department_eligible": dept_ok,
+                        "student_department": dept_code,
+                        "semester_eligible": sem_ok,
+                        "student_semester": student.current_semester,
+                    },
+                    readiness_score=readiness_score,
+                    application_status=app_map.get(opp.id),
+                )
+            )
         return results
 
     @staticmethod
@@ -856,27 +1352,37 @@ class PlacementService:
         student_id: int,
         opportunity_id: int,
         resume_url: Optional[str] = None,
-        cover_notes: Optional[str] = None
+        cover_notes: Optional[str] = None,
     ) -> StudentApplication:
-        existing = db.query(StudentApplication).filter(
-            StudentApplication.student_id == student_id,
-            StudentApplication.opportunity_id == opportunity_id
-        ).first()
+        existing = (
+            db.query(StudentApplication)
+            .filter(StudentApplication.student_id == student_id, StudentApplication.opportunity_id == opportunity_id)
+            .first()
+        )
         if existing:
             raise ValueError("You have already submitted an application for this opportunity.")
 
         opp = db.query(PlacementOpportunity).filter(PlacementOpportunity.id == opportunity_id).first()
         if not opp:
             raise ValueError("Placement opportunity not found.")
+        if (opp.status or "OPEN").upper() != "OPEN":
+            raise ValueError("This opportunity is no longer accepting applications.")
+        match = next(
+            (m for m in PlacementService.get_matching_opportunities_for_student(db, student_id) if m.id == opp.id), None
+        )
+        if match is not None and not match.is_eligible:
+            raise ValueError("You do not meet the eligibility criteria for this opportunity.")
 
         # Compute readiness score at moment of application
         score = 0.0
         if opp.role_id:
             try:
-                res = PlacementService.calculate_placement_readiness(db, student_id, opp.role_id)
+                res = PlacementService.calculate_placement_readiness(
+                    db, student_id, opp.role.code if opp.role else None
+                )
                 score = res.readiness_score
-            except Exception:
-                score = 70.0
+            except Exception:  # noqa: BLE001 — a failed score is shown as 0, never invented
+                score = 0.0
 
         application = StudentApplication(
             opportunity_id=opportunity_id,
@@ -894,10 +1400,7 @@ class PlacementService:
 
     @staticmethod
     def update_application_status(
-        db: Session,
-        application_id: int,
-        status: str,
-        reviewer_notes: Optional[str] = None
+        db: Session, application_id: int, status: str, reviewer_notes: Optional[str] = None
     ) -> StudentApplication:
         app = db.query(StudentApplication).filter(StudentApplication.id == application_id).first()
         if not app:

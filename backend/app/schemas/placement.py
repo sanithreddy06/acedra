@@ -1,12 +1,15 @@
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel
 
 
 # --- Skill Catalogue & Evidence Schemas ---
 class SkillBase(BaseModel):
     name: str
-    category: str = "programming"  # programming, framework, database, cloud, data_science, artificial_intelligence, cybersecurity, communication, teamwork, problem_solving
+    # programming, framework, database, cloud, data_science, artificial_intelligence,
+    # cybersecurity, communication, teamwork, problem_solving
+    category: str = "programming"
     description: Optional[str] = None
 
 
@@ -110,16 +113,6 @@ class CareerRoleBase(BaseModel):
 
 class CareerRoleCreate(CareerRoleBase):
     required_skills: List[RoleSkillItem] = []
-
-
-class CareerRoleUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    min_experience_level: Optional[str] = None
-    average_salary_range: Optional[str] = None
-    industry_demand: Optional[str] = None
-    is_active: Optional[bool] = None
-    required_skills: Optional[List[RoleSkillItem]] = None
 
 
 class CareerRoleResponse(CareerRoleBase):

@@ -1,0 +1,38 @@
+# Ruff lint configuration for the ACEDRA backend (run from backend/: `ruff check .`).
+target-version = "py310"
+line-length = 120
+extend-exclude = ["alembic/versions"]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes: unused/undefined names
+    "I",        # import ordering
+    "B",        # bugbear: likely bugs
+    "SIM",      # simplifications
+    "BLE",      # blind `except Exception`
+    "DTZ003",   # datetime.utcnow() (use app.core.clock.utcnow)
+    "RUF100",   # unused noqa
+]
+# SIM108 (prefer ternaries) is a style preference; long two-branch assignments read better as if/else.
+ignore = ["SIM108"]
+
+[lint.pycodestyle]
+# New and reformatted code wraps at 120 (line-length); 160 is the hard ceiling for existing long literals.
+max-line-length = 160
+
+[lint.per-file-ignores]
+# Tests assert on literal values and build fixtures freely.
+"tests/*" = ["B011", "SIM", "E402"]  # E402: tests set env/sys.path before importing the app
+
+[lint.flake8-bugbear]
+# FastAPI dependency markers are evaluated once by design.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.File",
+    "fastapi.Form", "fastapi.Header", "fastapi.Security",
+    "app.api.deps.require_role",  # dependency factory, called once at import time
+    "app.schemas.risk.RiskEvaluationTriggerRequest", "app.schemas.risk.AlertAcknowledgeRequest",
+]
+
+[lint.isort]
+known-first-party = ["app"]

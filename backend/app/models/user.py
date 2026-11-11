@@ -1,7 +1,10 @@
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, JSON
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
@@ -9,8 +12,18 @@ class UserRole(str, enum.Enum):
     STUDENT = "student"
     FACULTY = "faculty"
     MENTOR = "mentor"
-    ADMIN = "admin"  # Administrator / HOD
+    ADMIN = "admin"  # University Administrator / HOD
     PLACEMENT_OFFICER = "placement_officer"
+
+
+class PlatformRole(str, enum.Enum):
+    """ACEDRA internal team roles. Platform users have university_id = NULL."""
+    SUPER_ADMIN = "platform_admin"
+    EMPLOYEE = "platform_employee"
+
+
+UNIVERSITY_ROLES = {r.value for r in UserRole}
+PLATFORM_ROLES = {r.value for r in PlatformRole}
 
 
 class Role(Base, TimestampMixin):
@@ -25,7 +38,7 @@ class Role(Base, TimestampMixin):
     users = relationship("User", back_populates="role_rel")
 
 
-class User(Base, TimestampMixin):
+class User(Base, TimestampMixin, TenantMixin):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -39,6 +52,12 @@ class User(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=True, nullable=False)
     avatar_url = Column(String(500), nullable=True)
+    title = Column(String(150), nullable=True)  # job title / designation
+    # Incremented on logout / password change so previously issued tokens stop working.
+    token_version = Column(Integer, default=0, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
+    invited_at = Column(DateTime, nullable=True)
+    is_synthetic = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     role_rel = relationship("Role", back_populates="users")
@@ -47,3 +66,4 @@ class User(Base, TimestampMixin):
     faculty_profile = relationship("Faculty", back_populates="user", uselist=False, cascade="all, delete-orphan")
     mentor_profile = relationship("Mentor", back_populates="user", uselist=False, cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user")
+

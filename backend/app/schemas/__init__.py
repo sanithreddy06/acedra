@@ -1,11 +1,28 @@
-from app.schemas.auth import LoginRequest, Token, TokenPayload, RefreshTokenRequest
-from app.schemas.user import UserBase, UserCreate, UserUpdate, UserOut, RoleOut, ChangePassword, PasswordResetRequest, PasswordResetConfirm
-from app.schemas.department import DepartmentBase, DepartmentCreate, DepartmentOut
-from app.schemas.academic import SemesterBase, SemesterCreate, SemesterOut, SubjectBase, SubjectCreate, SubjectOut, FacultyCourseAssignmentOut
-from app.schemas.profile import StudentOut, FacultyOut, MentorOut, StudentMentorAssignmentOut
+from app.schemas.academic import (
+    FacultyCourseAssignmentOut,
+    SemesterBase,
+    SemesterCreate,
+    SemesterOut,
+    SubjectBase,
+    SubjectCreate,
+    SubjectOut,
+)
 from app.schemas.audit import AuditLogOut
-from app.schemas.system import SystemSettingBase, SystemSettingUpdate, SystemSettingOut
+from app.schemas.auth import LoginRequest, RefreshTokenRequest, Token, TokenPayload
 from app.schemas.dashboard import RoleDashboardResponse
+from app.schemas.department import DepartmentBase, DepartmentCreate, DepartmentOut
+from app.schemas.profile import FacultyOut, MentorOut, StudentMentorAssignmentOut, StudentOut
+from app.schemas.system import SystemSettingBase, SystemSettingOut, SystemSettingUpdate
+from app.schemas.user import (
+    ChangePassword,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    RoleOut,
+    UserBase,
+    UserCreate,
+    UserOut,
+    UserUpdate,
+)
 
 __all__ = [
     "LoginRequest",

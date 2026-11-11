@@ -67,31 +67,31 @@ SYNTHETIC_STUDENT_NAMES = [
     ("Bharath", "Kumar", "M"),
     ("Bhavana", "Reddy", "F"),
     ("Chetan", "Verma", "M"),
-    ("Deepika", "Padukone", "F"),
+    ("Deepa", "Ranganath", "F"),
     ("Divyansh", "Mishra", "M"),
-    ("Farhan", "Akhtar", "M"),
+    ("Faisal", "Ahmed", "M"),
     ("Gauri", "Shinde", "F"),
     ("Harish", "Patel", "M"),
-    ("Ishaan", "Khatter", "M"),
-    ("Janhavi", "Kapoor", "F"),
+    ("Ishan", "Kulkarni", "M"),
+    ("Jahnavi", "Rao", "F"),
     ("Karthik", "Subramanian", "M"),
     ("Lavanya", "Sundaram", "F"),
-    ("Manish", "Malhotra", "M"),
+    ("Manish", "Agarwal", "M"),
     ("Meera", "Nambiar", "F"),
-    ("Naveen", "Polishetty", "M"),
-    ("Neha", "Dhupia", "F"),
+    ("Naveen", "Prakash", "M"),
+    ("Neha", "Joshi", "F"),
     ("Omkar", "Gawande", "M"),
-    ("Pooja", "Hegde", "F"),
-    ("Pranav", "Mohanlal", "M"),
-    ("Rashmika", "Mandanna", "F"),
-    ("Rishi", "Kapoor", "M"),
-    ("Samyuktha", "Menon", "F"),
+    ("Pallavi", "Hiremath", "F"),
+    ("Pranav", "Menon", "M"),
+    ("Ramya", "Shetty", "F"),
+    ("Rishabh", "Kamath", "M"),
+    ("Samyuktha", "Iyengar", "F"),
     ("Siddharth", "Roy", "M"),
-    ("Swathi", "Reddy", "F"),
-    ("Tanmay", "Bhat", "M"),
-    ("Trisha", "Krishnan", "F"),
-    ("Varun", "Dhawan", "M"),
-    ("Vidya", "Balan", "F"),
+    ("Swathi", "Nair", "F"),
+    ("Tanmay", "Deshpande", "M"),
+    ("Tejaswini", "Gowda", "F"),
+    ("Varun", "Bhandari", "M"),
+    ("Vidya", "Shankar", "F"),
 ]
 
 
@@ -178,7 +178,7 @@ def seed_module1():
             usn = f"1RV22SYN{num_str}"
             srn = f"SRN-2022-SYN{num_str}"
             roll_number = f"SYN22-{num_str}"
-            email = f"{first_name.lower()}.{last_name.lower()}.syn@smartcampus.edu"
+            email = f"{first_name.lower()}.{last_name.lower()}.syn@reva-demo.example"
             full_name = f"{first_name} {last_name} [Synthetic Demo]"
 
             # Distribute across departments and semesters
@@ -399,7 +399,7 @@ def seed_module1():
                     issuing_organization=issuer,
                     issue_date=date(2025, random.randint(1, 12), random.randint(1, 28)),
                     credential_id=f"SYN-CERT-{student.id:04d}",
-                    credential_url="https://credentials.smartcampus.edu/verify/demo",
+                    credential_url="https://credentials.example.org/verify/demo",
                     verification_status="Verified",
                 ))
 
@@ -419,7 +419,7 @@ def seed_module1():
                     tech_stack=p_stack,
                     role=p_role,
                     github_url="https://github.com/synthetic-campus/project-demo",
-                    live_url="https://demo-projects.smartcampus.edu",
+                    live_url="https://demo-projects.example.org",
                     semester_number=current_sem_num,
                 ))
 
@@ -447,7 +447,7 @@ def seed_module1():
             if cgpa >= 8.5 and not student.hackathons:
                 db.add(Hackathon(
                     student_id=student.id,
-                    event_name="National Smart Campus Hackathon 2026 [Synthetic Demo]",
+                    event_name="National Student Hackathon 2026 [Synthetic Demo]",
                     organizer="Ministry of Education & Institutional Cell",
                     year=2026,
                     achievement="1st Runner Up" if idx % 2 == 0 else "Finalist",

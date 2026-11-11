@@ -1,50 +1,52 @@
+# ACEDRA — local stack: PostgreSQL 16 (+pgvector image), FastAPI backend, Nginx-served frontend.
+# Synthetic demo tenants are loaded on first start (SEED_DEMO_DATA=true).
 services:
   db:
     image: pgvector/pgvector:pg16
-    container_name: smart_campus_db
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-smart_campus}
+      POSTGRES_USER: ${POSTGRES_USER:-acedra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acedra-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-acedra}
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - acedra_pg_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-smart_campus}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acedra} -d ${POSTGRES_DB:-acedra}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   backend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.backend
-    container_name: smart_campus_backend
-    restart: always
+    build: { context: ., dockerfile: docker/Dockerfile.backend }
+    restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-smart_campus}
-      - SECRET_KEY=${SECRET_KEY:-change-this-in-production-super-secret-key-32-chars-min}
-      - ENVIRONMENT=production
-      - CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80"]
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acedra}:${POSTGRES_PASSWORD:-acedra-dev-password}@db:5432/${POSTGRES_DB:-acedra}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-secret-change-me}
+      AUTO_CREATE_SCHEMA: "false"
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      PUBLIC_APP_URL: http://localhost:3000
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173"]'
+      LLM_PROVIDER: ${LLM_PROVIDER:-none}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-lexical}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      db: { condition: service_healthy }
 
   frontend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.frontend
-    container_name: smart_campus_frontend
-    restart: always
+    build: { context: ., dockerfile: docker/Dockerfile.frontend }
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - backend
 
 volumes:
-  postgres_data:
+  acedra_pg_data:

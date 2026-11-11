@@ -1,19 +1,21 @@
 import enum
-from datetime import datetime
+
 from sqlalchemy import (
+    JSON,
+    Boolean,
     Column,
+    DateTime,
+    Float,
+    ForeignKey,
     Integer,
     String,
     Text,
-    Boolean,
-    Float,
-    ForeignKey,
-    DateTime,
-    JSON,
-    Enum as SAEnum,
 )
 from sqlalchemy.orm import relationship
+
+from app.core.clock import utcnow
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
@@ -47,7 +49,7 @@ class MessageRole(str, enum.Enum):
     SYSTEM = "system"
 
 
-class Document(Base, TimestampMixin):
+class Document(Base, TimestampMixin, TenantMixin):
     __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -71,7 +73,7 @@ class Document(Base, TimestampMixin):
     creator = relationship("User", foreign_keys=[created_by])
 
 
-class DocumentChunk(Base):
+class DocumentChunk(Base, TenantMixin):
     __tablename__ = "document_chunks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -83,13 +85,13 @@ class DocumentChunk(Base):
     page_number = Column(Integer, nullable=True)
     metadata_json = Column(JSON, default=dict)
     embedding_vector = Column(JSON, nullable=True)  # List of floats for cosine similarity
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     document = relationship("Document", back_populates="chunks")
 
 
-class DocumentAccessRule(Base, TimestampMixin):
+class DocumentAccessRule(Base, TimestampMixin, TenantMixin):
     __tablename__ = "document_access_rules"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -104,7 +106,7 @@ class DocumentAccessRule(Base, TimestampMixin):
     department = relationship("Department")
 
 
-class Conversation(Base, TimestampMixin):
+class Conversation(Base, TimestampMixin, TenantMixin):
     __tablename__ = "conversations"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -120,7 +122,7 @@ class Conversation(Base, TimestampMixin):
     feedback_entries = relationship("ConversationFeedback", back_populates="conversation", cascade="all, delete-orphan")
 
 
-class Message(Base):
+class Message(Base, TenantMixin):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -130,14 +132,16 @@ class Message(Base):
     sources_json = Column(JSON, default=list)  # Citations list: [{"document_id", "document_title", "section", "page", "score"}]
     token_count = Column(Integer, default=0)
     processing_time_ms = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    # "llm" when produced by the configured model, "offline_fallback" for extractive/template output
+    generation_mode = Column(String(30), default="offline_fallback", nullable=False)
+    created_at = Column(DateTime, default=utcnow, index=True)
 
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
     feedbacks = relationship("ConversationFeedback", back_populates="message", cascade="all, delete-orphan")
 
 
-class ConversationFeedback(Base):
+class ConversationFeedback(Base, TenantMixin):
     __tablename__ = "conversation_feedback"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -146,7 +150,7 @@ class ConversationFeedback(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_helpful = Column(Boolean, nullable=False)
     feedback_text = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     conversation = relationship("Conversation", back_populates="feedback_entries")

@@ -1,27 +1,32 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, Query, Response, status, HTTPException
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.api.deps import get_current_active_user, require_role
+from app.core.database import get_db
 from app.models.user import User
 from app.schemas.intervention import (
     InterventionCreate,
-    InterventionResponse,
     InterventionDetailResponse,
-    InterventionStatusUpdate,
+    InterventionFollowupCreate,
+    InterventionFollowupResponse,
+    InterventionFollowupUpdate,
     InterventionNoteCreate,
     InterventionNoteResponse,
-    InterventionFollowupCreate,
-    InterventionFollowupUpdate,
-    InterventionFollowupResponse,
-    NotificationResponse,
+    InterventionResponse,
+    InterventionStatusUpdate,
     NotificationPreferenceResponse,
     NotificationPreferenceUpdate,
     ReportExportCreate,
     ReportExportResponse,
 )
-from app.services.intervention_service import InterventionService
+from app.services.intervention_service import (
+    InterventionService,
+    followup_to_dict,
+    intervention_summary,
+    note_to_dict,
+)
 from app.services.notification_service import NotificationService
 from app.services.report_service import ReportService
 
@@ -54,6 +59,12 @@ def list_interventions(
         skip=skip,
         limit=limit,
     )
+    if current_user.role == "student":
+        # Students see that support exists and its status, never staff mentoring notes.
+        for it in items:
+            if isinstance(it, dict):
+                it["initial_notes"] = None
+                it["resolution_summary"] = None
     return items
 
 
@@ -69,38 +80,13 @@ def create_intervention(
         payload=payload,
         current_user=current_user,
     )
-    # Return formatted response dict
-    return {
-        "id": intervention.id,
-        "student_id": intervention.student_id,
-        "student_name": intervention.student.user.full_name if intervention.student and intervention.student.user else "Student",
-        "student_usn": intervention.student.usn if intervention.student else "N/A",
-        "student_department": intervention.student.department.name if intervention.student and intervention.student.department else None,
-        "student_semester": intervention.student.current_semester if intervention.student else None,
-        "mentor_id": intervention.mentor_id,
-        "mentor_name": intervention.mentor.user.full_name if intervention.mentor and intervention.mentor.user else None,
-        "assigned_by": intervention.assigned_by,
-        "assigned_by_name": current_user.full_name,
-        "risk_alert_id": intervention.risk_alert_id,
-        "title": intervention.title,
-        "intervention_type": intervention.intervention_type,
-        "priority": intervention.priority,
-        "status": intervention.status,
-        "initial_notes": intervention.initial_notes,
-        "target_resolution_date": intervention.target_resolution_date,
-        "resolved_at": intervention.resolved_at,
-        "resolution_summary": intervention.resolution_summary,
-        "created_at": intervention.created_at,
-        "updated_at": intervention.updated_at,
-        "notes_count": len(intervention.notes),
-        "followups_count": len(intervention.followups),
-    }
+    return intervention_summary(intervention)
 
 
 @router.get("/interventions/{intervention_id}", response_model=InterventionDetailResponse)
 def get_intervention_detail(
     intervention_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(["faculty", "mentor", "admin"])),
     db: Session = Depends(get_db),
 ) -> Any:
     """Fetch full intervention dossier including audit notes and scheduled follow-ups."""
@@ -125,31 +111,7 @@ def update_intervention_status(
         payload=payload,
         current_user=current_user,
     )
-    return {
-        "id": intervention.id,
-        "student_id": intervention.student_id,
-        "student_name": intervention.student.user.full_name if intervention.student and intervention.student.user else "Student",
-        "student_usn": intervention.student.usn if intervention.student else "N/A",
-        "student_department": intervention.student.department.name if intervention.student and intervention.student.department else None,
-        "student_semester": intervention.student.current_semester if intervention.student else None,
-        "mentor_id": intervention.mentor_id,
-        "mentor_name": intervention.mentor.user.full_name if intervention.mentor and intervention.mentor.user else None,
-        "assigned_by": intervention.assigned_by,
-        "assigned_by_name": intervention.assigned_by_user.full_name if intervention.assigned_by_user else None,
-        "risk_alert_id": intervention.risk_alert_id,
-        "title": intervention.title,
-        "intervention_type": intervention.intervention_type,
-        "priority": intervention.priority,
-        "status": intervention.status,
-        "initial_notes": intervention.initial_notes,
-        "target_resolution_date": intervention.target_resolution_date,
-        "resolved_at": intervention.resolved_at,
-        "resolution_summary": intervention.resolution_summary,
-        "created_at": intervention.created_at,
-        "updated_at": intervention.updated_at,
-        "notes_count": len(intervention.notes),
-        "followups_count": len(intervention.followups),
-    }
+    return intervention_summary(intervention)
 
 
 @router.post("/interventions/{intervention_id}/notes", response_model=InterventionNoteResponse, status_code=status.HTTP_201_CREATED)
@@ -166,16 +128,7 @@ def add_intervention_note(
         payload=payload,
         current_user=current_user,
     )
-    return {
-        "id": note.id,
-        "intervention_id": note.intervention_id,
-        "author_id": note.author_id,
-        "author_name": current_user.full_name,
-        "author_role": current_user.role,
-        "note_text": note.note_text,
-        "note_type": note.note_type,
-        "created_at": note.created_at,
-    }
+    return note_to_dict(note)
 
 
 @router.post("/interventions/{intervention_id}/followups", response_model=InterventionFollowupResponse, status_code=status.HTTP_201_CREATED)
@@ -192,19 +145,7 @@ def schedule_intervention_followup(
         payload=payload,
         current_user=current_user,
     )
-    return {
-        "id": followup.id,
-        "intervention_id": followup.intervention_id,
-        "mentor_id": followup.mentor_id,
-        "mentor_name": followup.mentor.user.full_name if followup.mentor and followup.mentor.user else None,
-        "scheduled_date": followup.scheduled_date,
-        "conducted_date": followup.conducted_date,
-        "followup_status": followup.followup_status,
-        "outcome_notes": followup.outcome_notes,
-        "student_feedback": followup.student_feedback,
-        "next_review_date": followup.next_review_date,
-        "created_at": followup.created_at,
-    }
+    return followup_to_dict(followup)
 
 
 @router.put("/interventions/followups/{followup_id}", response_model=InterventionFollowupResponse)
@@ -221,19 +162,7 @@ def record_followup_outcome(
         payload=payload,
         current_user=current_user,
     )
-    return {
-        "id": followup.id,
-        "intervention_id": followup.intervention_id,
-        "mentor_id": followup.mentor_id,
-        "mentor_name": followup.mentor.user.full_name if followup.mentor and followup.mentor.user else None,
-        "scheduled_date": followup.scheduled_date,
-        "conducted_date": followup.conducted_date,
-        "followup_status": followup.followup_status,
-        "outcome_notes": followup.outcome_notes,
-        "student_feedback": followup.student_feedback,
-        "next_review_date": followup.next_review_date,
-        "created_at": followup.created_at,
-    }
+    return followup_to_dict(followup)
 
 
 # ==========================================

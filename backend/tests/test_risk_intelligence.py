@@ -1,13 +1,20 @@
-import pytest
 import time
+
+import pytest
 from fastapi.testclient import TestClient
+
+from app.core.tenancy import TenantScope, set_session_scope
 from app.main import app
+
+
+def _tenant_session(db, tenant_id=1):
+    set_session_scope(db, TenantScope(tenant_id=tenant_id))
+    return db
 from app.core.database import SessionLocal
-from app.models.user import User
+from app.models.academic import StudentAssessment, StudentSemesterRecord, SubjectAttendance
 from app.models.profile import Student
-from app.models.department import Department
-from app.models.academic import SubjectAttendance, StudentAssessment, StudentSemesterRecord, Subject, Semester
-from app.models.risk import RiskRule, RiskAlert
+from app.models.risk import RiskAlert, RiskRule
+from app.models.user import User
 from app.services.risk_service import RiskService
 
 client = TestClient(app)
@@ -21,17 +28,17 @@ def get_auth_token(email: str, password: str = "AdminPass123!"):
 
 @pytest.fixture(scope="module")
 def admin_token():
-    return get_auth_token("admin@smartcampus.edu", "AdminPass123!")
+    return get_auth_token("admin@reva-demo.example", "AdminPass123!")
 
 
 @pytest.fixture(scope="module")
 def student_token():
-    return get_auth_token("student@smartcampus.edu", "StudentPass123!")
+    return get_auth_token("student@reva-demo.example", "StudentPass123!")
 
 
 @pytest.fixture(scope="module")
 def faculty_token():
-    return get_auth_token("faculty@smartcampus.edu", "FacultyPass123!")
+    return get_auth_token("faculty@reva-demo.example", "FacultyPass123!")
 
 
 # -----------------------------------------------------------------------------
@@ -96,7 +103,7 @@ def test_rules_retrieval_and_admin_crud(admin_token, student_token):
 # 2. TEST ATTENDANCE BELOW THRESHOLD & EXACTLY AT THRESHOLD (BOUNDARY TEST)
 # -----------------------------------------------------------------------------
 def test_attendance_boundary_conditions():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         # Create 2 test students:
         # Student A: Attendance 74.0% (< 75.0% -> SHOULD TRIGGER)
@@ -198,7 +205,7 @@ def test_attendance_boundary_conditions():
 # 3. TEST DECLINING SEMESTER PERFORMANCE (SGPA DROP >= 1.0)
 # -----------------------------------------------------------------------------
 def test_declining_performance_trigger():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         uniq_id = int(time.time() * 1000) % 1000000
         user = User(
@@ -269,7 +276,7 @@ def test_declining_performance_trigger():
 # 4. TEST HEALTHY NO-TRIGGER STUDENT
 # -----------------------------------------------------------------------------
 def test_healthy_no_trigger_student():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         uniq_id = int(time.time() * 1000) % 1000000
         user = User(
@@ -350,7 +357,7 @@ def test_healthy_no_trigger_student():
 # 5. TEST DUPLICATE ALERT PREVENTION
 # -----------------------------------------------------------------------------
 def test_duplicate_alert_prevention():
-    db = SessionLocal()
+    db = _tenant_session(SessionLocal())
     try:
         uniq_id = int(time.time() * 1000) % 1000000
         user = User(

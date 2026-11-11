@@ -1,5 +1,5 @@
-import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
@@ -10,25 +10,25 @@ def test_health_check():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert data["service"] == "Smart Campus Intelligence"
+    assert data["service"] == "ACEDRA"
 
 
 def test_login_success_student():
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "student@smartcampus.edu", "password": "StudentPass123!"}
+        json={"email": "student@reva-demo.example", "password": "StudentPass123!"}
     )
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
     assert data["user"]["role"] == "student"
-    assert data["user"]["email"] == "student@smartcampus.edu"
+    assert data["user"]["email"] == "student@reva-demo.example"
 
 
 def test_login_invalid_password():
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "student@smartcampus.edu", "password": "WrongPassword!"}
+        json={"email": "student@reva-demo.example", "password": "WrongPassword!"}
     )
     assert response.status_code == 401
     assert "detail" in response.json() or "message" in response.json()
@@ -37,7 +37,7 @@ def test_login_invalid_password():
 def test_login_nonexistent_user():
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "unknown@smartcampus.edu", "password": "WrongPassword!"}
+        json={"email": "unknown@reva-demo.example", "password": "WrongPassword!"}
     )
     assert response.status_code == 401
 
@@ -46,7 +46,7 @@ def test_rbac_admin_vs_student():
     # Login as Student
     student_res = client.post(
         "/api/v1/auth/login",
-        json={"email": "student@smartcampus.edu", "password": "StudentPass123!"}
+        json={"email": "student@reva-demo.example", "password": "StudentPass123!"}
     )
     student_token = student_res.json()["access_token"]
 
@@ -60,7 +60,7 @@ def test_rbac_admin_vs_student():
     # Login as Admin
     admin_res = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@smartcampus.edu", "password": "AdminPass123!"}
+        json={"email": "admin@reva-demo.example", "password": "AdminPass123!"}
     )
     admin_token = admin_res.json()["access_token"]
 
@@ -70,18 +70,18 @@ def test_rbac_admin_vs_student():
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert res_allowed.status_code == 200
-    users = res_allowed.json()
+    users = res_allowed.json()["items"]
     assert len(users) >= 5
 
 
 def test_dashboard_dynamic_metrics():
     # Test for each role
     roles_credentials = [
-        ("student@smartcampus.edu", "StudentPass123!", "student"),
-        ("faculty@smartcampus.edu", "FacultyPass123!", "faculty"),
-        ("mentor@smartcampus.edu", "MentorPass123!", "mentor"),
-        ("admin@smartcampus.edu", "AdminPass123!", "admin"),
-        ("placement@smartcampus.edu", "PlacementPass123!", "placement_officer"),
+        ("student@reva-demo.example", "StudentPass123!", "student"),
+        ("faculty@reva-demo.example", "FacultyPass123!", "faculty"),
+        ("mentor@reva-demo.example", "MentorPass123!", "mentor"),
+        ("admin@reva-demo.example", "AdminPass123!", "admin"),
+        ("placement@reva-demo.example", "PlacementPass123!", "placement_officer"),
     ]
 
     for email, pwd, expected_role in roles_credentials:

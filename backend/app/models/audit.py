@@ -1,10 +1,12 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON, Text
+from sqlalchemy import JSON, Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
-class AuditLog(Base, TimestampMixin):
+class AuditLog(Base, TimestampMixin, TenantMixin):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)

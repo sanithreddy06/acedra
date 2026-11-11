@@ -2,30 +2,86 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------- tokens */
+:root {
+  --paper: 246 244 238;      /* ivory with a grey cast */
+  --surface: 253 252 249;
+  --sunken: 239 236 228;     /* soft stone */
+  --line: 228 224 213;
+  --line-strong: 206 201 187;
+  --ink: 37 38 31;           /* graphite */
+  --muted: 98 97 88;         /* warm grey; ≥4.5:1 on paper, surface and sunken */
+  --faint: 106 104 94;       /* ≥4.5:1 on paper and surface (was 150 148 137, ~2.8:1) */
+  --forest: 46 74 59;        /* single primary */
+  --forest-soft: 225 233 225;
+  --on-forest: 246 244 238;
+  --olive: 113 118 80;
+  --bronze: 124 92 48;       /* attention signal only; ≥4.5:1 on bronze-soft */
+  --bronze-soft: 242 233 216;
+  --danger: 154 61 45;
+  --danger-soft: 244 226 220;
+  --caution: 150 108 30;
+  --caution-soft: 245 236 214;
+  --ok: 64 110 72;
+  --ok-soft: 226 237 224;
+  --shadow: 40 36 24;
+  color-scheme: light;
+}
+.dark {
+  --paper: 23 24 20;
+  --surface: 31 32 27;
+  --sunken: 38 39 33;
+  --line: 52 53 45;
+  --line-strong: 72 73 63;
+  --ink: 235 233 225;
+  --muted: 166 164 150;
+  --faint: 146 144 131;
+  --forest: 143 178 152;
+  --forest-soft: 39 54 44;
+  --on-forest: 23 24 20;
+  --olive: 171 175 132;
+  --bronze: 212 172 116;
+  --bronze-soft: 58 48 33;
+  --danger: 226 140 120;
+  --danger-soft: 62 36 30;
+  --caution: 224 182 104;
+  --caution-soft: 58 48 26;
+  --ok: 150 196 156;
+  --ok-soft: 34 52 38;
+  --shadow: 0 0 0;
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------- base */
 @layer base {
-  * {
-    border-color: theme('colors.slate.200');
-  }
-  .dark * {
-    border-color: theme('colors.slate.800');
-  }
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-paper text-ink font-sans antialiased; font-size: 14px; line-height: 1.5; font-feature-settings: "ss01", "tnum" 0; }
+  h1, h2, h3 { @apply text-ink; text-wrap: balance; }
+  ::selection { background: rgb(var(--forest) / 0.18); }
+  :focus-visible { outline: 2px solid rgb(var(--forest)); outline-offset: 2px; border-radius: 4px; }
+  input, select, textarea, button { font: inherit; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .grid > * { min-width: 0; }
 }
 
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+@layer components {
+  .page-title { @apply font-serif text-[28px] leading-[1.15] font-medium tracking-[-0.01em] text-ink; }
+  .section-title { @apply text-[13px] font-semibold text-ink; }
+  .label { @apply text-[12.5px] font-medium text-muted; }
+  .link { @apply text-forest underline decoration-forest/30 underline-offset-2 hover:decoration-forest; }
+  .prose-acedra p { @apply mb-3 last:mb-0; }
+  .prose-acedra ul { @apply list-disc pl-5 mb-3 space-y-1; }
+  .prose-acedra ol { @apply list-decimal pl-5 mb-3 space-y-1; }
+  .prose-acedra strong { @apply font-semibold; }
+  .prose-acedra h4, .prose-acedra h3 { @apply font-semibold mt-3 mb-1; }
+  .prose-acedra blockquote { @apply border-l-2 border-line-strong pl-3 text-muted my-2; }
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.7);
-}
+@keyframes acedra-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: acedra-in 160ms ease-out; }
+@keyframes acedra-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.skeleton { background: rgb(var(--sunken)); animation: acedra-pulse 1.4s ease-in-out infinite; border-radius: 4px; }

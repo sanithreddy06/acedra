@@ -1,16 +1,18 @@
 import pytest
 from fastapi.testclient import TestClient
+
+from app.core.tenancy import TenantScope, set_session_scope
 from app.main import app
+
+
+def _tenant_session(db, tenant_id=1):
+    set_session_scope(db, TenantScope(tenant_id=tenant_id))
+    return db
 from app.core.database import SessionLocal
-from app.models.profile import Student
 from app.models.placement import (
-    CareerRole,
-    RoleSkill,
-    PlacementOpportunity,
-    OpportunityRequirement,
     StudentApplication,
-    SkillEvidence,
 )
+from app.models.profile import Student
 from app.models.student_intelligence import Skill, StudentSkill
 from app.services.placement_service import PlacementService
 
@@ -19,11 +21,11 @@ client = TestClient(app)
 
 def get_auth_token(username: str, role: str) -> str:
     login_data = {
-        "student": ("student@smartcampus.edu", "StudentPass123!"),
-        "faculty": ("faculty@smartcampus.edu", "FacultyPass123!"),
-        "mentor": ("mentor@smartcampus.edu", "MentorPass123!"),
-        "admin": ("admin@smartcampus.edu", "AdminPass123!"),
-        "placement": ("placement@smartcampus.edu", "PlacementPass123!"),
+        "student": ("student@reva-demo.example", "StudentPass123!"),
+        "faculty": ("faculty@reva-demo.example", "FacultyPass123!"),
+        "mentor": ("mentor@reva-demo.example", "MentorPass123!"),
+        "admin": ("admin@reva-demo.example", "AdminPass123!"),
+        "placement": ("placement@reva-demo.example", "PlacementPass123!"),
     }
     email, password = login_data[role]
     res = client.post("/api/v1/auth/login", json={"email": email, "password": password})
@@ -33,7 +35,7 @@ def get_auth_token(username: str, role: str) -> str:
 
 @pytest.fixture
 def db():
-    session = SessionLocal()
+    session = _tenant_session(SessionLocal())
     try:
         yield session
     finally:
@@ -276,8 +278,21 @@ def test_opportunity_matching_and_application_tracking(db):
     matches = res_matches.json()
     assert len(matches) > 0
 
-    # Pick an opportunity to apply to
-    target_opp = matches[0]
+    # Ineligible applications are refused server-side
+    ineligible = [m for m in matches if not m["is_eligible"]]
+    if ineligible:
+        db.query(StudentApplication).filter(StudentApplication.student_id == student.id,
+                                            StudentApplication.opportunity_id == ineligible[0]["id"]).delete()
+        db.commit()
+        res_bad = client.post("/api/v1/placement/applications", json={"opportunity_id": ineligible[0]["id"]},
+                              headers={"Authorization": f"Bearer {student_token}"})
+        assert res_bad.status_code == 400
+        assert "eligib" in res_bad.text.lower()
+
+    # Pick an eligible opportunity to apply to
+    eligible = [m for m in matches if m["is_eligible"]]
+    assert eligible, "seed data should include at least one opportunity the demo student qualifies for"
+    target_opp = eligible[0]
     opp_id = target_opp["id"]
 
     # Clean existing application if any

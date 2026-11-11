@@ -1,31 +1,48 @@
-# Python
+# ---------------------------------------------------------------- Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-backend/.venv/
-.env
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# SQLite & Backups
-*.db
-*.sqlite3
-database/backups/*.gz
-
-# Node / Frontend
+# ---------------------------------------------------------------- Node / frontend
 node_modules/
 dist/
 dist-ssr/
 *.local
 
-# Logs
+# ---------------------------------------------------------------- Environment & secrets
+# Local configuration is never committed; templates (*.example) are.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ---------------------------------------------------------------- Databases & backups
+*.db
+*.sqlite3
+database/backups/*.gz
+_recovery/
+
+# ---------------------------------------------------------------- Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment
+# ---------------------------------------------------------------- OS & editors
 .DS_Store
+._*
+__MACOSX/
 Thumbs.db
 .idea/
 .vscode/
+
+# Intermediate OpenAPI dump used by `npm run gen:api`
+frontend/openapi.json

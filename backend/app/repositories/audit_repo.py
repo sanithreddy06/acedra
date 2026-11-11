@@ -1,5 +1,7 @@
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from sqlalchemy.orm import Session
+
 from app.models.audit import AuditLog
 from app.repositories.base import BaseRepository
 
@@ -16,7 +18,9 @@ class AuditRepository(BaseRepository[AuditLog]):
         resource_id: Optional[str] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        university_id: Optional[int] = None,
+        commit: bool = True,
     ) -> AuditLog:
         audit_entry = AuditLog(
             user_id=user_id,
@@ -25,12 +29,11 @@ class AuditRepository(BaseRepository[AuditLog]):
             resource_id=resource_id,
             ip_address=ip_address,
             user_agent=user_agent,
-            details=details or {}
+            details=details or {},
+            university_id=university_id,
         )
         self.db.add(audit_entry)
-        self.db.commit()
-        self.db.refresh(audit_entry)
+        if commit:
+            self.db.commit()
         return audit_entry
 
-    def get_recent(self, limit: int = 50) -> List[AuditLog]:
-        return self.db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit).all()

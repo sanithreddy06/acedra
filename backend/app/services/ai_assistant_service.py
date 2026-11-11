@@ -1,31 +1,35 @@
-import uuid
-import hashlib
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from fastapi import HTTPException, status
+"""AI assistant (module 5): document indexing, retrieval and conversations.
 
+Pipeline for each message (``send_message``):
+1. the conversation must belong to the caller (others are indistinguishable from missing);
+2. ``search_relevant_passages`` ranks chunks of *active* documents the caller's role may read
+   (``allowed_permissions``) — tenant isolation comes from the ORM scope in ``app.core.tenancy``;
+3. in personal mode, ``StudentContextService`` adds only records the caller is authorised to see;
+4. ``LLMService`` answers from those sources, or returns a labelled offline/extractive answer;
+5. both messages are stored with their citations and generation mode.
+"""
+import hashlib
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+from fastapi import HTTPException
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from app.core.clock import utcnow
 from app.models.ai_assistant import (
-    Document,
-    DocumentChunk,
-    DocumentAccessRule,
-    Conversation,
-    Message,
-    ConversationFeedback,
-    DocumentCategory,
-    DocumentAccessPermission,
     AssistantMode,
+    Conversation,
+    ConversationFeedback,
+    Document,
+    DocumentAccessPermission,
+    DocumentAccessRule,
+    DocumentChunk,
+    Message,
     MessageRole,
 )
 from app.models.user import User
-from app.models.profile import Student
 from app.schemas.ai_assistant import (
-    DocumentCreate,
-    ConversationCreate,
-    MessageCreate,
-    ConversationFeedbackCreate,
-    SourceCitation,
     SuggestedQuestion,
 )
 from app.services.embedding_service import EmbeddingService
@@ -82,7 +86,7 @@ class AIAssistantService:
             chunk_count=len(chunks_data),
             access_permission=access_permission,
             is_active=True,
-            indexed_at=datetime.utcnow(),
+            indexed_at=utcnow(),
             created_by=created_by_user_id,
         )
         db.add(doc)
@@ -113,6 +117,7 @@ class AIAssistantService:
                 section_heading=c.get("section_heading"),
                 page_number=c.get("page_number", 1),
                 metadata_json={
+                    "embedding_provider": EmbeddingService.provider_label(),
                     "document_title": title,
                     "category": category,
                     "access_permission": access_permission,
@@ -160,7 +165,7 @@ class AIAssistantService:
             db.add(chunk)
 
         doc.chunk_count = len(chunks_data)
-        doc.indexed_at = datetime.utcnow()
+        doc.indexed_at = utcnow()
         db.commit()
         db.refresh(doc)
         return doc
@@ -182,12 +187,24 @@ class AIAssistantService:
         skip: int = 0,
         limit: int = 50,
     ) -> List[Document]:
-        query = db.query(Document).filter(Document.is_active == True)
+        query = db.query(Document).filter(Document.is_active.is_(True))
         if category:
             query = query.filter(Document.category == category)
         if search:
             query = query.filter(Document.title.ilike(f"%{search}%"))
         return query.order_by(desc(Document.created_at)).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def allowed_permissions(user_role: str) -> List[str]:
+        """Document access levels. "PUBLIC" means every member of the university (never the open internet)."""
+        allowed = []
+        if user_role in ["student", "faculty", "mentor", "admin", "placement_officer"]:
+            allowed += [DocumentAccessPermission.PUBLIC.value, DocumentAccessPermission.AUTHENTICATED_STUDENT.value]
+        if user_role in ["faculty", "mentor", "admin"]:
+            allowed.append(DocumentAccessPermission.FACULTY_ONLY.value)
+        if user_role == "admin":
+            allowed.append(DocumentAccessPermission.ADMIN_ONLY.value)
+        return allowed
 
     @staticmethod
     def search_relevant_passages(
@@ -203,20 +220,13 @@ class AIAssistantService:
         2. Score via EmbeddingService.rank_chunks.
         3. Return top-k passages with scores and metadata.
         """
-        # Role-based access permission filter
-        allowed_permissions = [DocumentAccessPermission.PUBLIC.value]
-        if user_role in ["student", "faculty", "mentor", "admin", "placement_officer"]:
-            allowed_permissions.append(DocumentAccessPermission.AUTHENTICATED_STUDENT.value)
-        if user_role in ["faculty", "admin"]:
-            allowed_permissions.append(DocumentAccessPermission.FACULTY_ONLY.value)
-        if user_role == "admin":
-            allowed_permissions.append(DocumentAccessPermission.ADMIN_ONLY.value)
+        allowed_permissions = AIAssistantService.allowed_permissions(user_role)
 
         chunks = (
             db.query(DocumentChunk, Document.title, Document.category)
             .join(Document, DocumentChunk.document_id == Document.id)
             .filter(
-                Document.is_active == True,
+                Document.is_active.is_(True),
                 Document.access_permission.in_(allowed_permissions),
             )
             .all()
@@ -268,12 +278,9 @@ class AIAssistantService:
         user: Optional[User] = None,
         title: Optional[str] = "New Conversation",
     ) -> Conversation:
-        if session_id:
-            conv = db.query(Conversation).filter(Conversation.session_id == session_id).first()
-            if conv:
-                return conv
-
-        new_session_id = session_id or str(uuid.uuid4())
+        if user is None:
+            raise HTTPException(status_code=401, detail="Sign in to use the ACEDRA assistant.")
+        new_session_id = str(uuid.uuid4())  # never adopt a client-supplied id (prevents session hijack)
         conv = Conversation(
             session_id=new_session_id,
             user_id=user.id if user else None,
@@ -292,30 +299,24 @@ class AIAssistantService:
         session_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Conversation]:
-        query = db.query(Conversation)
-        if user:
-            query = query.filter(Conversation.user_id == user.id)
-        elif session_id:
-            query = query.filter(Conversation.session_id == session_id)
-        else:
+        if not user:
             return []
+        query = db.query(Conversation).filter(Conversation.user_id == user.id)
 
         conversations = query.order_by(desc(Conversation.updated_at)).limit(limit).all()
         # Annotate with message count and latest message preview
         for c in conversations:
             msg_count = db.query(Message).filter(Message.conversation_id == c.id).count()
             latest = db.query(Message).filter(Message.conversation_id == c.id).order_by(desc(Message.created_at)).first()
-            setattr(c, "messages_count", msg_count)
-            setattr(c, "latest_message", latest.content[:60] if latest else None)
+            c.messages_count = msg_count
+            c.latest_message = latest.content[:60] if latest else None
         return conversations
 
     @staticmethod
     def delete_conversation(db: Session, conversation_id: int, user: Optional[User] = None) -> bool:
         conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-        if not conv:
+        if not conv or not user or conv.user_id != user.id:
             raise HTTPException(status_code=404, detail="Conversation not found")
-        if user and conv.user_id and conv.user_id != user.id and user.role != "admin":
-            raise HTTPException(status_code=403, detail="Unauthorized to delete this conversation")
         db.delete(conv)
         db.commit()
         return True
@@ -337,8 +338,10 @@ class AIAssistantService:
         invokes LLMService, and persists both User and Assistant messages.
         """
         conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-        if not conv:
+        if not conv or not current_user or conv.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Conversation not found")
+        if len(user_message) > 4000:
+            raise HTTPException(status_code=422, detail="Message is too long (4,000 characters maximum).")
 
         # 1. Save User Message
         user_msg = Message(
@@ -357,7 +360,7 @@ class AIAssistantService:
                 clean_title += "..."
             conv.title = clean_title
 
-        conv.updated_at = datetime.utcnow()
+        conv.updated_at = utcnow()
 
         # 2. Gather Grounding Context
         user_role = current_user.role if current_user else "public"
@@ -398,6 +401,7 @@ class AIAssistantService:
             role=MessageRole.ASSISTANT.value,
             content=llm_result["content"],
             sources_json=llm_result.get("citations", []),
+            generation_mode=llm_result.get("generation_mode", "offline_fallback"),
             token_count=llm_result.get("token_count", 0),
             processing_time_ms=llm_result.get("processing_time_ms", 0.0),
         )
@@ -420,7 +424,7 @@ class AIAssistantService:
         user: Optional[User] = None,
     ) -> ConversationFeedback:
         msg = db.query(Message).filter(Message.id == message_id).first()
-        if not msg:
+        if not msg or not user or not msg.conversation or msg.conversation.user_id != user.id:
             raise HTTPException(status_code=404, detail="Message not found")
 
         feedback = ConversationFeedback(

@@ -1,19 +1,21 @@
 import enum
-from datetime import datetime, date
+
 from sqlalchemy import (
+    JSON,
+    Boolean,
     Column,
+    Date,
+    DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
-    Boolean,
-    ForeignKey,
-    DateTime,
-    Date,
-    JSON,
-    Float,
 )
 from sqlalchemy.orm import relationship
+
+from app.core.clock import utcnow
 from app.core.database import Base
+from app.core.tenancy import TenantMixin
 from app.models.base import TimestampMixin
 
 
@@ -51,7 +53,7 @@ class ReportType(str, enum.Enum):
     PLACEMENT_READINESS = "PLACEMENT_READINESS"
 
 
-class Intervention(Base, TimestampMixin):
+class Intervention(Base, TimestampMixin, TenantMixin):
     __tablename__ = "interventions"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -76,25 +78,32 @@ class Intervention(Base, TimestampMixin):
     assigned_by_user = relationship("User", foreign_keys=[assigned_by])
     risk_alert = relationship("RiskAlert", backref="intervention")
     notes = relationship("InterventionNote", back_populates="intervention", cascade="all, delete-orphan", order_by="InterventionNote.created_at")
-    followups = relationship("InterventionFollowup", back_populates="intervention", cascade="all, delete-orphan", order_by="InterventionFollowup.scheduled_date")
+    followups = relationship(
+        "InterventionFollowup",
+        back_populates="intervention",
+        cascade="all, delete-orphan",
+        order_by="InterventionFollowup.scheduled_date",
+    )
 
 
-class InterventionNote(Base):
+class InterventionNote(Base, TenantMixin):
     __tablename__ = "intervention_notes"
 
     id = Column(Integer, primary_key=True, index=True)
     intervention_id = Column(Integer, ForeignKey("interventions.id", ondelete="CASCADE"), nullable=False, index=True)
     author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     note_text = Column(Text, nullable=False)
-    note_type = Column(String(30), default="GENERAL", nullable=False)  # GENERAL, OBSERVATION, ACTION_ITEM, PARENT_COMMUNICATION, COUNSELING
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    note_type = Column(
+        String(30), default="GENERAL", nullable=False
+    )  # GENERAL, OBSERVATION, ACTION_ITEM, PARENT_COMMUNICATION, COUNSELING
+    created_at = Column(DateTime, default=utcnow, index=True)
 
     # Relationships
     intervention = relationship("Intervention", back_populates="notes")
     author = relationship("User")
 
 
-class InterventionFollowup(Base):
+class InterventionFollowup(Base, TenantMixin):
     __tablename__ = "intervention_followups"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -103,19 +112,21 @@ class InterventionFollowup(Base):
 
     scheduled_date = Column(Date, nullable=False, index=True)
     conducted_date = Column(DateTime, nullable=True)
-    followup_status = Column(String(30), default="SCHEDULED", nullable=False, index=True)  # SCHEDULED, COMPLETED, MISSED, RESCHEDULED
+    followup_status = Column(
+        String(30), default="SCHEDULED", nullable=False, index=True
+    )  # SCHEDULED, COMPLETED, MISSED, RESCHEDULED
 
     outcome_notes = Column(Text, nullable=True)
     student_feedback = Column(Text, nullable=True)
     next_review_date = Column(Date, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     intervention = relationship("Intervention", back_populates="followups")
     mentor = relationship("Mentor")
 
 
-class Notification(Base):
+class Notification(Base, TenantMixin):
     __tablename__ = "notifications"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -129,13 +140,13 @@ class Notification(Base):
     action_url = Column(String(255), nullable=True)
     is_read = Column(Boolean, default=False, nullable=False, index=True)
     read_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
 
     # Relationships
     user = relationship("User", backref="app_notifications")
 
 
-class NotificationPreference(Base):
+class NotificationPreference(Base, TenantMixin):
     __tablename__ = "notification_preferences"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -146,13 +157,13 @@ class NotificationPreference(Base):
     intervention_notifications = Column(Boolean, default=True)
     placement_notifications = Column(Boolean, default=True)
     announcement_notifications = Column(Boolean, default=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     # Relationships
     user = relationship("User", backref="notification_preference")
 
 
-class ReportExport(Base):
+class ReportExport(Base, TenantMixin):
     __tablename__ = "report_exports"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -167,7 +178,7 @@ class ReportExport(Base):
     file_size_bytes = Column(Integer, default=0)
     report_data_json = Column(JSON, nullable=True)
     content_payload = Column(Text, nullable=True)  # Stored CSV or serialized content
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
 
     # Relationships
     generator = relationship("User", foreign_keys=[generated_by])

@@ -16,13 +16,12 @@ from app.models.system import SystemSetting
 
 
 def seed():
-    print(">>> Initializing database tables...")
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
         # Check if already seeded
-        if db.query(Role).count() > 0 and db.query(User).count() > 0:
+        if db.query(User).count() > 0:
             print(">>> Database is already seeded. Skipping initial seed.")
             return
 
@@ -61,9 +60,11 @@ def seed():
         ]
         roles_map = {}
         for r in roles_data:
-            role = Role(**r)
-            db.add(role)
-            db.flush()
+            role = db.query(Role).filter(Role.name == r["name"]).first()
+            if not role:
+                role = Role(**r)
+                db.add(role)
+                db.flush()
             roles_map[r["name"]] = role
 
         print(">>> Seeding Departments...")
@@ -125,7 +126,7 @@ def seed():
         print(">>> Seeding 5 Primary Role Users...")
         # 1. Admin / HOD
         admin_user = User(
-            email="admin@smartcampus.edu",
+            email="admin@reva-demo.example",
             hashed_password=get_password_hash("AdminPass123!"),
             full_name="Dr. Sarah Jenkins (HOD)",
             phone="+1-555-0100",
@@ -140,7 +141,7 @@ def seed():
 
         # 2. Mentor
         mentor_user = User(
-            email="mentor@smartcampus.edu",
+            email="mentor@reva-demo.example",
             hashed_password=get_password_hash("MentorPass123!"),
             full_name="Prof. David K. Sterling",
             phone="+1-555-0102",
@@ -165,7 +166,7 @@ def seed():
 
         # 3. Faculty
         faculty_user = User(
-            email="faculty@smartcampus.edu",
+            email="faculty@reva-demo.example",
             hashed_password=get_password_hash("FacultyPass123!"),
             full_name="Dr. Elena Rostova",
             phone="+1-555-0103",
@@ -207,7 +208,7 @@ def seed():
 
         # 4. Placement Officer
         placement_user = User(
-            email="placement@smartcampus.edu",
+            email="placement@reva-demo.example",
             hashed_password=get_password_hash("PlacementPass123!"),
             full_name="Marcus Vance",
             phone="+1-555-0104",
@@ -222,7 +223,7 @@ def seed():
 
         # 5. Primary Student
         student_user = User(
-            email="student@smartcampus.edu",
+            email="student@reva-demo.example",
             hashed_password=get_password_hash("StudentPass123!"),
             full_name="Alex Mercer",
             phone="+1-555-0105",
@@ -265,11 +266,11 @@ def seed():
 
         # Additional Student Cohort for realistic metrics
         additional_students_data = [
-            ("Rohan Iyer", "rohan.iyer@smartcampus.edu", "CS22B002", "1RV22CS002", 9.15, 96.0, "Eligible", mentor_profile.id),
-            ("Priya Nair", "priya.nair@smartcampus.edu", "CS22B003", "1RV22CS003", 7.85, 88.0, "Eligible", mentor_profile.id),
-            ("Kavita Rao", "kavita.rao@smartcampus.edu", "CS22B004", "1RV22CS004", 5.65, 68.0, "Ineligible", mentor_profile.id),  # At-risk
-            ("Arjun Mehta", "arjun.mehta@smartcampus.edu", "CS22B005", "1RV22CS005", 8.42, 91.0, "Placed", mentor_profile.id),
-            ("Sneha Patil", "sneha.patil@smartcampus.edu", "CS22B006", "1RV22CS006", 6.20, 71.0, "Eligible", mentor_profile.id),  # Borderline
+            ("Rohan Iyer", "rohan.iyer@reva-demo.example", "CS22B002", "1RV22CS002", 9.15, 96.0, "Eligible", mentor_profile.id),
+            ("Priya Nair", "priya.nair@reva-demo.example", "CS22B003", "1RV22CS003", 7.85, 88.0, "Eligible", mentor_profile.id),
+            ("Kavita Rao", "kavita.rao@reva-demo.example", "CS22B004", "1RV22CS004", 5.65, 68.0, "Ineligible", mentor_profile.id),  # At-risk
+            ("Arjun Mehta", "arjun.mehta@reva-demo.example", "CS22B005", "1RV22CS005", 8.42, 91.0, "Placed", mentor_profile.id),
+            ("Sneha Patil", "sneha.patil@reva-demo.example", "CS22B006", "1RV22CS006", 6.20, 71.0, "Eligible", mentor_profile.id),  # Borderline
         ]
 
         for s_name, s_email, roll, usn, cgpa, att, p_stat, m_id in additional_students_data:

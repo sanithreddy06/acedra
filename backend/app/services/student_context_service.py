@@ -1,12 +1,25 @@
-from typing import Optional, Dict, Any, List
-from sqlalchemy.orm import Session
+"""Builds the student record summary used by the assistant's personal mode.
+
+Only records the caller may already see are included: a student gets their own; staff must name a
+student inside their scope. Nothing else from the database reaches the language model.
+"""
+from typing import Any, Dict, Optional
+
 from fastapi import HTTPException, status
-from app.models.user import User
+from sqlalchemy.orm import Session
+
 from app.models.profile import Student
-from app.services.student_service import StudentIntelligenceService
-from app.services.risk_service import RiskService
-from app.services.recommendation_service import RecommendationService
+from app.models.user import User
 from app.services.placement_service import PlacementService
+from app.services.recommendation_service import RecommendationService
+from app.services.risk_service import RiskService
+from app.services.student_service import StudentIntelligenceService
+
+
+def _structure(db: Session, student: Student) -> dict:
+    from app.models.platform import University
+    uni = db.query(University).filter(University.id == student.university_id).first()
+    return (uni.academic_structure or {}) if uni else {}
 
 
 class StudentContextService:
@@ -52,13 +65,12 @@ class StudentContextService:
         else:
             # Faculty / Mentor / Admin / Placement Officer
             if not target_student_id:
-                # Default to first student in their department or global first
-                query = db.query(Student)
-                if current_user.department_id:
-                    query = query.filter(Student.department_id == current_user.department_id)
-                student = query.first()
-            else:
-                student = db.query(Student).filter(Student.id == target_student_id).first()
+                raise HTTPException(
+                    status_code=422,
+                    detail="Select a student you are authorised to support before using personal mode.",
+                )
+            # The session is student-scoped: students outside the caller's authority are not visible.
+            student = db.query(Student).filter(Student.id == target_student_id).first()
 
             if not student:
                 raise HTTPException(
@@ -90,7 +102,11 @@ class StudentContextService:
             rec_summary.append(f"- [{category}] {title} ({status_val})")
 
         # 4. Fetch Module 4 Placement Readiness
-        readiness_out = PlacementService.calculate_placement_readiness(db, student.id, "SOFTWARE_DEVELOPER")
+        goal = (student.career_goals or ["Software Developer"])[0].replace(" ", "_").replace("/", "_").upper()
+        try:
+            readiness_out = PlacementService.calculate_placement_readiness(db, student.id, goal)
+        except ValueError:
+            readiness_out = PlacementService.calculate_placement_readiness(db, student.id, "SOFTWARE_DEVELOPER")
         readiness_data = readiness_out.model_dump()
 
         # Build compact, structured context
@@ -117,7 +133,10 @@ class StudentContextService:
             "cgpa": metrics.get("cgpa", 0.0),
             "total_credits": metrics.get("total_credits_earned", 0),
             "active_backlogs": metrics.get("total_backlogs", 0),
-            "overall_attendance_percentage": metrics.get("overall_attendance_percentage", 0.0),
+            "overall_attendance_percentage": metrics.get("calculated_attendance_percentage")
+            if metrics.get("calculated_attendance_percentage") is not None else student_profile.get("attendance_percentage", 0.0),
+            "minimum_attendance_percent": _structure(db, student).get("minimum_attendance_percent", 75),
+            "term_label": _structure(db, student).get("term_label", "Semester"),
             "cia_average": metrics.get("internal_assessment_average", 0.0),
             "risk_status": "FLAGGED" if active_alerts_list else "NORMAL",
             "active_alerts_count": len(active_alerts_list),

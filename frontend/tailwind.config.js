@@ -1,31 +1,32 @@
-/** @type {import('tailwindcss').Config} */
+/** ACEDRA design tokens — colours resolve to CSS variables so light and dark themes share one system. */
+const v = (name) => `rgb(var(--${name}) / <alpha-value>)`;
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
-          950: '#1e1b4b',
-        },
+        paper: v('paper'), surface: v('surface'), sunken: v('sunken'), line: v('line'), 'line-strong': v('line-strong'),
+        ink: v('ink'), muted: v('muted'), faint: v('faint'),
+        forest: v('forest'), 'forest-soft': v('forest-soft'), olive: v('olive'), bronze: v('bronze'),
+        'bronze-soft': v('bronze-soft'), danger: v('danger'), 'danger-soft': v('danger-soft'),
+        ok: v('ok'), 'ok-soft': v('ok-soft'), caution: v('caution'), 'caution-soft': v('caution-soft'),
+        'on-forest': v('on-forest'),
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['"Instrument Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['Newsreader', 'ui-serif', 'Georgia', 'serif'],
       },
+      fontSize: {
+        '2xs': ['0.6875rem', { lineHeight: '1rem' }],
+      },
+      borderRadius: { DEFAULT: '6px', md: '6px', lg: '10px' },
+      boxShadow: {
+        pop: '0 1px 2px rgb(var(--shadow) / 0.06), 0 8px 24px -6px rgb(var(--shadow) / 0.14)',
+        hair: '0 1px 0 rgb(var(--shadow) / 0.04)',
+      },
+      maxWidth: { content: '76rem', prose: '42rem' },
     },
   },
   plugins: [],
-}
+};
