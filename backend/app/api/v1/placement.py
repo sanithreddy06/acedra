@@ -282,21 +282,42 @@ def submit_student_application(
 def list_student_applications(
     student_id: Optional[int] = None,
     opportunity_id: Optional[int] = None,
+    status: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: Optional[int] = Query(None, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    List applications. Students only see their own applications;
-    Placement Officers and Admins see all across the institution.
+    List applications, newest first, optionally filtered by status and paged. Students only see their
+    own applications; Placement Officers and Admins see all across the institution.
     """
     if current_user.role == UserRole.STUDENT.value:  # students see only their own applications
         student = own_student_record(db, current_user)
         if not student:
             return []
-        apps = PlacementService.list_applications(db, student_id=student.id)
-    else:
-        apps = PlacementService.list_applications(db, student_id=student_id, opportunity_id=opportunity_id)
+        student_id, opportunity_id = student.id, None
+    apps = PlacementService.list_applications(db, student_id=student_id, opportunity_id=opportunity_id,
+                                              status=status, skip=skip, limit=limit)
     return [application_to_response(a) for a in apps]
+
+
+@router.get("/applications/count")
+def count_student_applications(
+    student_id: Optional[int] = None,
+    opportunity_id: Optional[int] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """How many applications match the same filters as the list (for pagination)."""
+    if current_user.role == UserRole.STUDENT.value:
+        student = own_student_record(db, current_user)
+        if not student:
+            return {"total": 0}
+        student_id, opportunity_id = student.id, None
+    return {"total": PlacementService.count_applications(db, student_id=student_id, opportunity_id=opportunity_id,
+                                                         status=status)}
 
 
 @router.put("/applications/{application_id}/status", response_model=StudentApplicationResponse)

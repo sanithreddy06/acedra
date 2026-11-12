@@ -59,6 +59,9 @@ PROFICIENCY_WEIGHTS = {
     "expert": 4,
 }
 
+# Share of a skill's credit earned while it is still self-reported (no verified evidence yet).
+UNVERIFIED_SKILL_CREDIT = 0.5
+
 IMPORTANCE_WEIGHTS = {
     "CRITICAL": 3.0,
     "CORE": 2.0,
@@ -1063,14 +1066,33 @@ class PlacementService:
 
     @staticmethod
     def list_applications(
-        db: Session, *, student_id: Optional[int] = None, opportunity_id: Optional[int] = None
+        db: Session, *, student_id: Optional[int] = None, opportunity_id: Optional[int] = None,
+        status: Optional[str] = None, skip: int = 0, limit: Optional[int] = None,
     ) -> List[StudentApplication]:
+        q = PlacementService._applications_query(db, student_id, opportunity_id, status)
+        q = q.order_by(StudentApplication.applied_at.desc(), StudentApplication.id.desc()).offset(skip)
+        if limit:
+            q = q.limit(limit)
+        return q.all()
+
+    @staticmethod
+    def count_applications(
+        db: Session, *, student_id: Optional[int] = None, opportunity_id: Optional[int] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        return PlacementService._applications_query(db, student_id, opportunity_id, status).count()
+
+    @staticmethod
+    def _applications_query(db: Session, student_id: Optional[int], opportunity_id: Optional[int],
+                            status: Optional[str]):
         q = db.query(StudentApplication)
         if student_id:
             q = q.filter(StudentApplication.student_id == student_id)
         if opportunity_id:
             q = q.filter(StudentApplication.opportunity_id == opportunity_id)
-        return q.order_by(StudentApplication.applied_at.desc()).all()
+        if status:
+            q = q.filter(StudentApplication.status == status.upper())
+        return q
 
     @staticmethod
     def get_career_roles(db: Session, is_active: Optional[bool] = None) -> List[CareerRole]:
@@ -1093,7 +1115,9 @@ class PlacementService:
         Each skill the role requires carries a weight (its ``importance_weight``, else CRITICAL 3 / CORE 2 /
         PREFERRED 1). A recorded skill at or above the required proficiency earns the full weight; a lower
         level earns a share proportional to the proficiency gap (never less than 20%); a missing skill earns
-        nothing. Unverified skills still count but are reported so evidence can be requested.
+        nothing. A self-reported skill that has not been verified earns ``UNVERIFIED_SKILL_CREDIT`` (half)
+        of that credit, so a student cannot raise their own score just by listing skills; verifying the
+        evidence restores the full credit.
 
         ``readiness_score`` = earned weight / total weight × 100, and ``readiness_tier`` follows
         :func:`readiness_tier`. Unknown role identifiers fall back to the first configured role.
@@ -1157,9 +1181,10 @@ class PlacementService:
                 if not is_ver:
                     unverified_count += 1
 
+                credit = 1.0 if is_ver else UNVERIFIED_SKILL_CREDIT
                 if st_val >= req_val:
-                    # Full credit
-                    earned_weight += weight
+                    # Full credit once verified; half while self-reported
+                    earned_weight += weight * credit
                     matched_count += 1
                     status = "REQUIRES_VERIFICATION" if not is_ver else "MATCHED"
                     suggested_imp = (
@@ -1170,7 +1195,7 @@ class PlacementService:
                 else:
                     # Partial credit proportional to proficiency shortfall
                     partial_ratio = max(0.2, st_val / float(req_val))
-                    earned_weight += weight * partial_ratio
+                    earned_weight += weight * partial_ratio * credit
                     below_count += 1
                     status = "BELOW_PROFICIENCY"
                     if rs.is_mandatory:

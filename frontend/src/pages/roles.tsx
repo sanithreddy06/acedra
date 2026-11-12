@@ -9,7 +9,7 @@ import { PageHeader } from '../components/shell';
 import { ChartContainer, ColumnChart, Distribution } from '../components/charts';
 import type { AdminAnalytics, AdminDashboard, MentorDashboard, PlacementDashboard, Application, CareerRole, DepartmentSummary, FacultyAnalytics, Opportunity, PlacementReadiness, RiskAlertList, RiskStatistics, RoleDashboard, StudentProfile } from '../types/api';
 import {
-  Async, Badge, Button, cx, DataTable, Dialog, Drawer, EmptyState, Field, Input, Meter, Notice, Panel, SearchInput, Select,
+  Async, Badge, Button, cx, DataTable, Dialog, Drawer, EmptyState, Field, Input, Meter, Notice, Pagination, Panel, SearchInput, Select,
   Stat, StatStrip, StatusBadge, Textarea, Toolbar, useToast,
 } from '../components/ui';
 
@@ -216,11 +216,15 @@ export function PlacementOverview() {
 
 export function PlacementReadinessPage() {
   const roles = useApi<CareerRole[]>('/placement/roles');
-  const students = useApi<StudentProfile[]>('/students/', { limit: 1000 });
   const [role, setRole] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearchValue] = useState('');
+  const [skip, setSkip] = useState(0);
+  const limit = 25;
+  const setSearch = (v: string) => { setSearchValue(v); setSkip(0); };
+  const students = useApi<StudentProfile[]>('/students/', { search, skip, limit });
+  const count = useApi<{ total: number }>('/students/count', { search });
   const [selected, setSelected] = useState<StudentProfile | null>(null);
-  const rows = (students.data || []).filter((s) => !search || s.full_name.toLowerCase().includes(search.toLowerCase()) || s.usn.toLowerCase().includes(search.toLowerCase()));
+  const rows = students.data || [];
   return (
     <div>
       <PageHeader title="Student readiness" lede="Readiness compares a student’s skills with a role’s requirements. It is an internal indicator — not a prediction of placement or an employer certification." />
@@ -229,14 +233,15 @@ export function PlacementReadinessPage() {
           <SearchInput value={search} onChange={setSearch} placeholder="Search students" className="w-full sm:w-64" />
           <Select value={role} onChange={(e) => setRole(e.target.value)} className="w-56" aria-label="Role"><option value="">Each student’s target role</option>{roles.data?.map((r) => <option key={r.code} value={r.code}>{r.title}</option>)}</Select>
         </Toolbar>
-        <Async state={students}>{() => (
-          <DataTable rows={rows} onRowClick={(s) => setSelected(s)} columns={[
+        <Async state={students}>{() => (<>
+          <DataTable rows={rows} empty={<EmptyState title="No students match" />} onRowClick={(s) => setSelected(s)} columns={[
             { key: 'n', header: 'Student', sort: (s) => s.full_name, render: (s) => <div><div className="font-medium">{cleanName(s.full_name)}</div><div className="text-[12px] text-muted">{s.usn} · {s.department_code}</div></div> },
             { key: 'c', header: 'CGPA', align: 'right', sort: (s) => s.cgpa, render: (s) => num(s.cgpa, 2) },
             { key: 'a', header: 'Attendance', align: 'right', sort: (s) => s.attendance_percentage, render: (s) => pct(s.attendance_percentage) },
             { key: 'p', header: 'Eligibility', render: (s) => <StatusBadge status={s.placement_status === 'Placed' ? 'placed' : s.placement_status === 'Eligible' ? 'ready' : 'pending'} label={s.placement_status} /> },
           ]} />
-        )}</Async>
+          <Pagination total={count.data?.total ?? skip + rows.length} skip={skip} limit={limit} onChange={setSkip} />
+        </>)}</Async>
       </Panel>
       {selected && <ReadinessDrawer student={selected} role={role} onClose={() => setSelected(null)} />}
     </div>
@@ -326,17 +331,21 @@ export function OpportunitiesPage() {
 const APP_STATUSES = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'OFFERED', 'PLACED', 'REJECTED', 'WITHDRAWN'];
 export function ApplicationsPage() {
   const toast = useToast();
-  const [status, setStatus] = useState('');
-  const apps = useApi<Application[]>('/placement/applications', { status });
+  const [status, setStatusValue] = useState('');
+  const [skip, setSkip] = useState(0);
+  const limit = 25;
+  const setStatus = (s: string) => { setStatusValue(s); setSkip(0); };
+  const apps = useApi<Application[]>('/placement/applications', { status, skip, limit });
+  const count = useApi<{ total: number }>('/placement/applications/count', { status });
   const update = async (a: Application, s: string) => {
-    try { await api.put(`/placement/applications/${a.id}/status`, { status: s }); toast(`Moved to ${titleCase(s).toLowerCase()}`); apps.reload(); } catch (e) { toast(errorMessage(e), 'error'); }
+    try { await api.put(`/placement/applications/${a.id}/status`, { status: s }); toast(`Moved to ${titleCase(s).toLowerCase()}`); apps.reload(); count.reload(); } catch (e) { toast(errorMessage(e), 'error'); }
   };
   return (
     <div>
       <PageHeader title="Applications" lede="Track each application from submission to outcome. Students see status changes in their workspace." />
       <Panel padded={false}>
         <Toolbar><Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-52" aria-label="Status"><option value="">All statuses</option>{APP_STATUSES.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}</Select></Toolbar>
-        <Async state={apps}>{(list) => (
+        <Async state={apps}>{(list) => (<>
           <DataTable rows={list} empty={<EmptyState title="No applications match" />} columns={[
             { key: 's', header: 'Student', render: (a) => <div><div className="font-medium">{cleanName(a.student_name)}</div><div className="text-[12px] text-muted">{a.student_srn}</div></div> },
             { key: 'o', header: 'Opportunity', render: (a) => <div><div>{a.opportunity_title}</div><div className="text-[12px] text-muted">{a.company_name}</div></div> },
@@ -345,7 +354,8 @@ export function ApplicationsPage() {
             { key: 'st', header: 'Status', render: (a) => (
               <Select value={a.status} onChange={(e) => update(a, e.target.value)} className="h-8 w-48" aria-label="Application status">{APP_STATUSES.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}</Select>) },
           ]} />
-        )}</Async>
+          <Pagination total={count.data?.total ?? skip + list.length} skip={skip} limit={limit} onChange={setSkip} />
+        </>)}</Async>
       </Panel>
     </div>
   );

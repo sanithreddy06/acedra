@@ -400,7 +400,7 @@ export function StudentCareer() {
             <Stat label="Core skills met" value={r.mandatory_skills_met ? 'Yes' : 'Not yet'} />
           </StatStrip>
           <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-            <Panel padded={false} title={`What ${r.target_role?.title || 'this role'} needs`} description="Score weights critical skills more heavily; self-reported skills count and are marked for verification.">
+            <Panel padded={false} title={`What ${r.target_role?.title || 'this role'} needs`} description="Score weights critical skills more heavily; self-reported skills earn half credit until faculty verify them.">
               <DataTable rows={r.skill_gaps || []} rowKey={(g) => g.skill_name} columns={[
                 { key: 'skill', header: 'Skill', render: (g) => <div><span className="font-medium">{g.skill_name}</span>{g.is_mandatory && <span className="ml-1.5 text-[11.5px] text-muted">core</span>}</div> },
                 { key: 'need', header: 'Needed', render: (g) => g.required_proficiency },

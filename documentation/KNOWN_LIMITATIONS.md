@@ -54,9 +54,6 @@ ACEDRA in this repository is **prototype-complete**. It is not yet production-re
 
 ## Product decisions still open
 
-* **Self-reported skills count fully towards placement readiness.** Unverified skills are flagged but earn full
-  credit, so a student can raise their own score by adding skills. Decide whether unverified skills should earn
-  partial or no credit (`PlacementService.calculate_placement_readiness`).
 * **One account per email address across all universities.** A person cannot hold accounts at two tenants.
 * **Sending student records to an external language model.** With `LLM_PROVIDER` set, personal-mode answers send
   the student's record to that provider. The prompt-injection filter is a short pattern list and is not a

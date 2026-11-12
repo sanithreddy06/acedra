@@ -347,3 +347,55 @@ def test_configuration_fails_closed():
     with pytest.raises(ValueError):  # built-in secret with a real database server, whatever the environment
         Settings(_env_file=None, ENVIRONMENT="development", DATABASE_URL="postgresql+psycopg://u:p@db/acedra")
     Settings(_env_file=None, ENVIRONMENT="development", DATABASE_URL="sqlite:///./dev.db")
+
+
+# --------------------------------------------------------------------------- placement
+def test_self_reported_skills_earn_half_credit_until_verified(client, auth):
+    """A student must not be able to raise their own readiness just by listing skills."""
+    from app.models import Student, StudentSkill
+    from app.models.placement import CareerRole, RoleSkill
+    from app.services.placement_service import UNVERIFIED_SKILL_CREDIT, PlacementService
+
+    db = _db()
+    try:
+        role = db.query(CareerRole).filter(CareerRole.university_id.isnot(None)).first()
+        student = db.query(Student).filter(Student.university_id == role.university_id).first()
+        required = db.query(RoleSkill).filter(RoleSkill.role_id == role.id).all()
+        db.query(StudentSkill).filter(StudentSkill.student_id == student.id).delete()
+        for rs in required:
+            db.add(StudentSkill(student_id=student.id, skill_id=rs.skill_id, proficiency_level="Expert",
+                                is_verified=False, university_id=role.university_id))
+        db.commit()
+        set_session_scope(db, TenantScope(tenant_id=role.university_id))
+        unverified = PlacementService.calculate_placement_readiness(db, student.id, role.id).readiness_score
+        set_session_scope(db, TenantScope(bypass=True))
+        db.query(StudentSkill).filter(StudentSkill.student_id == student.id).update({"is_verified": True})
+        db.commit()
+        set_session_scope(db, TenantScope(tenant_id=role.university_id))
+        verified = PlacementService.calculate_placement_readiness(db, student.id, role.id).readiness_score
+    finally:
+        db.close()
+    assert verified == pytest.approx(100.0, abs=0.1)
+    assert unverified == pytest.approx(100.0 * UNVERIFIED_SKILL_CREDIT, abs=0.1)
+
+
+def test_applications_can_be_filtered_by_status_and_paged(client, auth):
+    admin = auth("anitha.rao@reva.in")
+    everything = client.get(f"{P}/placement/applications", headers=admin).json()
+    total = client.get(f"{P}/placement/applications/count", headers=admin).json()["total"]
+    assert total == len(everything) > 2
+
+    status = everything[0]["status"]
+    filtered = client.get(f"{P}/placement/applications", headers=admin, params={"status": status}).json()
+    assert filtered and all(a["status"] == status for a in filtered)
+    assert client.get(f"{P}/placement/applications/count", headers=admin,
+                      params={"status": status}).json()["total"] == len(filtered)
+
+    page1 = client.get(f"{P}/placement/applications", headers=admin, params={"limit": 2}).json()
+    page2 = client.get(f"{P}/placement/applications", headers=admin, params={"limit": 2, "skip": 2}).json()
+    assert [a["id"] for a in page1] == [a["id"] for a in everything[:2]]
+    assert [a["id"] for a in page2] == [a["id"] for a in everything[2:4]]
+
+    student = auth("aarav.sharma@reva.in")  # a student's count covers only their own applications
+    own = client.get(f"{P}/placement/applications", headers=student).json()
+    assert client.get(f"{P}/placement/applications/count", headers=student).json()["total"] == len(own) < total
