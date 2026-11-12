@@ -36,7 +36,7 @@ export function AssistantWorkspace() {
   const convs = useApi<Conversation[]>('/ai/conversations');
   const status = useApi<AssistantStatus>('/ai/status');
   const suggestions = useApi<SuggestedQuestion[]>('/ai/suggested-questions', { mode });
-  const students = useApi<StudentProfile[]>(!isStudent && mode === 'PERSONAL_MODE_B' ? '/students/' : null, { limit: 100 });
+  const students = useApi<StudentProfile[]>(!isStudent && mode === 'PERSONAL_MODE_B' ? '/students/' : null, { limit: 1000 });
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);

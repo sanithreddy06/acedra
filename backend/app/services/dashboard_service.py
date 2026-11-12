@@ -166,7 +166,7 @@ class DashboardService:
                     "title": a.rule.name if a.rule else "Performance Alert",
                     "severity": a.severity,
                     "description": a.ai_explanation or "Attendance or academic threshold flag",
-                    "created_at": a.detected_date.strftime("%b %d, %Y") if a.detected_date else "",
+                    "created_at": a.detected_date.isoformat() if a.detected_date else None,
                 }
                 for a in active_alerts
             ],
@@ -463,7 +463,7 @@ class DashboardService:
                     "type": i.intervention_type,
                     "priority": i.priority,
                     "status": i.status,
-                    "updated_at": i.updated_at.strftime("%b %d, %Y") if i.updated_at else "",
+                    "updated_at": i.updated_at.isoformat() if i.updated_at else None,
                 }
                 for i in open_interventions[:6]
             ],
@@ -471,10 +471,11 @@ class DashboardService:
                 {
                     "id": f.id,
                     "intervention_id": f.intervention_id,
+                    "intervention_title": f.intervention.title if f.intervention else None,
                     "student_name": f.intervention.student.user.full_name
                     if f.intervention and f.intervention.student and f.intervention.student.user
                     else "Student",
-                    "scheduled_date": f.scheduled_date.strftime("%b %d, %Y"),
+                    "scheduled_date": f.scheduled_date.isoformat(),
                     "status": f.followup_status,
                 }
                 for f in pending_followups
@@ -651,7 +652,7 @@ class DashboardService:
                 "id": a.id,
                 "action": a.action.replace("_", " ").title(),
                 "user": a.user.email if a.user else "System",
-                "time": a.created_at.strftime("%b %d, %H:%M"),
+                "time": a.created_at.isoformat(),
                 "details": str(a.details or {}),
             }
             for a in recent_audits
@@ -669,7 +670,8 @@ class DashboardService:
         students = self.db.query(Student).all()
         total_students = len(students)
 
-        eligible_students = [s for s in students if (s.cgpa or 0.0) >= 7.0 and (s.attendance_percentage or 0.0) >= 75.0]
+        # Eligibility is the recorded placement status (set from the university's criteria), not a fixed cut-off.
+        eligible_students = [s for s in students if s.placement_status in ("Eligible", "Placed")]
         eligible_count = len(eligible_students)
         placed_students = [s for s in students if s.placement_status == "Placed"]
         placed_count = len(placed_students)
@@ -697,9 +699,9 @@ class DashboardService:
         pipeline_applied = len([a for a in applications if a.status == "APPLIED"])
         pipeline_shortlisted = len([a for a in applications if a.status == "SHORTLISTED"])
         pipeline_interview = len(
-            [a for a in applications if a.status in ["INTERVIEW_ROUND_1", "INTERVIEW_ROUND_2", "FINAL_ROUND"]]
+            [a for a in applications if a.status == "INTERVIEW_SCHEDULED"]
         )
-        pipeline_offered = len([a for a in applications if a.status == "OFFER_EXTENDED"])
+        pipeline_offered = len([a for a in applications if a.status == "OFFERED"])
         pipeline_placed = len([a for a in applications if a.status == "PLACED"])
 
         application_pipeline = [
@@ -760,7 +762,7 @@ class DashboardService:
                     "company": o.company_name,
                     "location": o.location,
                     "salary_package": o.ctc_stipend,
-                    "application_deadline": o.application_deadline.strftime("%b %d, %Y")
+                    "application_deadline": o.application_deadline.isoformat()
                     if o.application_deadline
                     else "Rolling",
                 }

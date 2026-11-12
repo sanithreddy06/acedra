@@ -24,8 +24,8 @@ def _own_student_id(client, headers):
     return client.get("/api/v1/auth/me", headers=headers).json()["student_id"]
 
 
-@pytest.mark.parametrize("email", ["student@reva-demo.example", "mentor@reva-demo.example",
-                                   "admin@reva-demo.example", "placement@deccan-tech.example"])
+@pytest.mark.parametrize("email", ["aarav.sharma@reva.in", "suresh.hegde@reva.in",
+                                   "anitha.rao@reva.in", "placement@deccan-tech.example"])
 def test_common_endpoints_never_leak_internal_fields(client, auth, email):
     headers = auth(email)
     for path in ENDPOINTS:
@@ -35,7 +35,7 @@ def test_common_endpoints_never_leak_internal_fields(client, auth, email):
 
 
 def test_learning_path_returns_schema_fields_only(client, auth):
-    headers = auth("student@reva-demo.example")
+    headers = auth("aarav.sharma@reva.in")
     sid = _own_student_id(client, headers)
     client.post(f"/api/v1/recommendations/generate/{sid}", headers=headers)
     r = client.get(f"/api/v1/recommendations/students/{sid}/learning-path", headers=headers)
@@ -53,7 +53,7 @@ def test_learning_path_returns_schema_fields_only(client, auth):
 
 
 def test_admin_learning_path_view_does_not_leak_mentor_account(client, auth):
-    headers = auth("admin@reva-demo.example")
+    headers = auth("anitha.rao@reva.in")
     r = client.get("/api/v1/recommendations/students/1/learning-path", headers=headers)
     assert r.status_code == 200
-    assert "hashed_password" not in r.text and "@reva-demo.example" not in r.text
+    assert "hashed_password" not in r.text and "@reva.in" not in r.text

@@ -21,7 +21,7 @@ from app.services.ai_assistant_service import AIAssistantService
 
 CANONICAL_DOCUMENTS = [
     {
-        "title": "[Synthetic] REVA Academic Regulations & Grading System",
+        "title": "REVA Academic Regulations & Grading System",
         "category": DocumentCategory.ACADEMIC_REGULATIONS.value,
         "description": "Official university regulations governing the 10-point grading system, SGPA/CGPA formulas, minimum credit requirements, and degree qualification criteria.",
         "file_name": "REVA_Academic_Regulations_2026.md",
@@ -51,29 +51,32 @@ Students securing an 'F' grade or prevented from taking end-semester exams due t
 """,
     },
     {
-        "title": "[Synthetic] REVA Attendance Policy and Condonation Guidelines",
+        "title": "REVA Attendance Policy and Condonation Guidelines",
         "category": DocumentCategory.ATTENDANCE_GUIDELINES.value,
-        "description": "Comprehensive guidelines specifying mandatory 85% attendance, 75%-84% medical condonation procedures, and detention consequences.",
+        "description": "Minimum 75% attendance in every course, the 65% to 74% condonation band, and what happens below 65%.",
         "file_name": "REVA_Attendance_Policy_and_Condonation.md",
         "access_permission": DocumentAccessPermission.PUBLIC.value,
         "content": """# REVA University Attendance Policy & Condonation Guidelines
 
-## Section 1: Standard Attendance Mandate (85% Rule)
-All undergraduate and postgraduate students are strictly required to maintain a minimum attendance of 85% in individual course theory classes and 85% in laboratory practical sessions. Attendance counts are calculated dynamically from verified biometric and LMS classroom logs.
+## Section 1: Minimum Attendance Requirement (75%)
+Every student must maintain at least 75% attendance in each registered course, theory and laboratory alike, to be eligible for the Semester End Examination (SEE). Attendance is calculated from the class registers maintained by the course teacher and is visible to students throughout the semester.
 
-## Section 2: Medical Condonation Band (75% to 84%)
-Students who fail to achieve 85% but maintain at least 75% aggregate attendance in a course may apply for attendance condonation subject to the following stringent conditions:
-1. Valid medical hospitalization with a signed certificate from a registered medical practitioner submitted to the HOD within 3 days of resuming campus.
-2. Representation of the university in recognized national or inter-university sports, cultural, or academic hackathons approved by the Dean of Student Affairs.
-3. Payment of the official condonation administrative processing fee of Rs. 1,000 per subject.
-4. Final approval rests with the Dean of Academic Affairs.
+## Section 2: Condonation Band (65% to 74%)
+A student whose attendance in a course is at least 65% but below 75% may apply for condonation on one of these grounds:
+1. Medical treatment or hospitalisation, supported by a certificate from a registered medical practitioner submitted to the Head of Department within 3 days of returning to campus.
+2. Representing the university in recognised inter-university sports, cultural events or hackathons approved by the Dean of Student Affairs.
+3. Payment of the condonation processing fee of Rs. 1,000 per course.
+4. Final approval rests with the Dean, Academic Affairs.
 
-## Section 3: Critical Attendance Deficit (< 75% Detention)
-Students with attendance strictly below 75% in any registered subject are designated as 'Not Eligible' (NE) and are automatically detained from taking the Semester End Examination (SEE) for that course. Detained students must re-register for the course during the summer remedial term or supplementary semester by paying the prescribed course tuition fee. No condonation is granted under any circumstances below 75%.
+## Section 3: Attendance Below 65%
+A student with attendance below 65% in any course is marked 'Not Eligible' (NE) for that course and cannot take its Semester End Examination. The student must re-register for the course in the summer term or a later semester. Condonation is not granted below 65%.
+
+## Section 4: Early Support
+Mentors are alerted as soon as a student's attendance in any course falls below 75%, so that a recovery plan can be agreed well before the examination eligibility list is prepared.
 """,
     },
     {
-        "title": "[Synthetic] REVA Continuous Internal Assessment (CIA) Guidelines",
+        "title": "REVA Continuous Internal Assessment (CIA) Guidelines",
         "category": DocumentCategory.EXAMINATION_GUIDELINES.value,
         "description": "Regulations governing the 50% internal assessment components, minimum 40% qualifying marks, and assignment submissions.",
         "file_name": "REVA_Continuous_Internal_Assessment_Guidelines.md",
@@ -98,7 +101,7 @@ Practical laboratory courses are evaluated every session on a 100% continuous as
 """,
     },
     {
-        "title": "[Synthetic] REVA Campus Placement and Corporate Recruitment Policy",
+        "title": "REVA Campus Placement and Corporate Recruitment Policy",
         "category": DocumentCategory.PLACEMENT_GUIDELINES.value,
         "description": "Rules for corporate recruitment drives, Dream Offer exceptions, eligibility criteria, and zero-backlog policies.",
         "file_name": "REVA_Campus_Placement_and_Recruitment_Rules.md",
@@ -122,7 +125,7 @@ Shortlisted candidates must attend interview rounds in formal business attire, c
 """,
     },
     {
-        "title": "[Synthetic] REVA Mandatory Internship and Capstone Project Norms",
+        "title": "REVA Mandatory Internship and Capstone Project Norms",
         "category": DocumentCategory.INTERNSHIP_GUIDELINES.value,
         "description": "Guidelines for mandatory 6-8 week summer industry internships, faculty mentorship, credits, and viva voce examinations.",
         "file_name": "REVA_Mandatory_Internship_and_Capstone_Norms.md",
@@ -143,7 +146,7 @@ Unsatisfactory performance or non-completion requires repeating the internship i
 """,
     },
     {
-        "title": "[Synthetic] REVA Student Handbook, Campus Facilities and Conduct",
+        "title": "REVA Student Handbook, Campus Facilities and Conduct",
         "category": DocumentCategory.CAMPUS_HANDBOOK.value,
         "description": "Campus facilities, Central Library operating hours, code of conduct, digital ID cards, and anti-ragging helpline.",
         "file_name": "REVA_Student_Handbook_and_Conduct.md",
@@ -202,94 +205,6 @@ def seed_module5_rag_data():
         )
         seeded_docs += 1
         print(f"    + Indexed Document [{doc.id}]: {doc.title} ({doc.chunk_count} chunks)")
-
-    # Seed Sample Public and Personal Demo Conversations
-    student = db.query(User).filter(User.role == "student").first()
-
-    # Public Conversation Seed
-    public_conv = db.query(Conversation).filter(Conversation.title == "Campus Attendance & Grading Inquiries").first()
-    if not public_conv:
-        public_conv = Conversation(
-            session_id="public-demo-session-2026-xyz",
-            mode=AssistantMode.PUBLIC_MODE_A.value,
-            title="Campus Attendance & Grading Inquiries",
-        )
-        db.add(public_conv)
-        db.flush()
-
-        msg1 = Message(
-            conversation_id=public_conv.id,
-            role=MessageRole.USER.value,
-            content="What are the official attendance condonation rules and minimum percentage?",
-            token_count=11,
-        )
-        db.add(msg1)
-
-        msg2 = Message(
-            conversation_id=public_conv.id,
-            role=MessageRole.ASSISTANT.value,
-            content=(
-                "### Official University Policy Summary\n"
-                "Based on **REVA Attendance Policy and Condonation Guidelines** (*Section 1: Standard Attendance Mandate*, Page 1):\n"
-                "All undergraduate and postgraduate students are strictly required to maintain a minimum attendance of **85%** in individual course theory classes and 85% in laboratory practical sessions.\n\n"
-                "#### Medical Condonation Band (75% to 84%):\n"
-                "Students between 75% and 84% may apply for condonation on genuine medical grounds (hospitalization) or university sports representation with a Rs. 1,000 fee and Dean approval. Below 75% results in detention from end-semester exams."
-            ),
-            sources_json=[
-                {
-                    "document_id": 2,
-                    "document_title": "REVA Attendance Policy and Condonation Guidelines",
-                    "category": "ATTENDANCE_GUIDELINES",
-                    "section": "Section 1: Standard Attendance Mandate",
-                    "page": 1,
-                    "relevance_score": 0.92,
-                    "snippet": "All undergraduate and postgraduate students are strictly required to maintain a minimum attendance of 85% in individual course theory classes...",
-                }
-            ],
-            token_count=120,
-            processing_time_ms=18.5,
-        )
-        db.add(msg2)
-
-    # Personal Student Conversation Seed
-    if student:
-        personal_conv = db.query(Conversation).filter(Conversation.title == "Alex's Academic & Career Coaching").first()
-        if not personal_conv:
-            personal_conv = Conversation(
-                session_id="personal-demo-alex-mercer",
-                user_id=student.id,
-                mode=AssistantMode.PERSONAL_MODE_B.value,
-                title="Alex's Academic & Career Coaching",
-            )
-            db.add(personal_conv)
-            db.flush()
-
-            pmsg1 = Message(
-                conversation_id=personal_conv.id,
-                role=MessageRole.USER.value,
-                content="Can you summarize my academic progress, attendance, and what skills I need to work on?",
-                token_count=15,
-            )
-            db.add(pmsg1)
-
-            pmsg2 = Message(
-                conversation_id=personal_conv.id,
-                role=MessageRole.ASSISTANT.value,
-                content=(
-                    "### Personal Student Intelligence Dossier for Alex Mercer (1RV22CS001)\n\n"
-                    "- **Current Standing**: 5th Semester &bull; Computer Science & Engineering\n"
-                    "- **Cumulative CGPA**: **8.42 / 10.00** &bull; **Active Backlogs**: 0 (Clear standing)\n"
-                    "- **Aggregate Attendance**: **87.5%** (Meets 85% standard requirement)\n"
-                    "- **Target Career Goal**: **Software Developer** (Readiness: **88%** - READY)\n\n"
-                    "#### Actionable Growth Recommendations:\n"
-                    "1. Practice production Docker deployments to transition your containerization competency from Intermediate to Advanced.\n"
-                    "2. Complete the approved AWS Cloud Practitioner certification before campus placement drives open in Semester 7."
-                ),
-                sources_json=[],
-                token_count=110,
-                processing_time_ms=22.1,
-            )
-            db.add(pmsg2)
 
     db.commit()
     db.close()

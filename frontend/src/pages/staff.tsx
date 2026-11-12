@@ -4,7 +4,7 @@ import { Plus, RefreshCw } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useApi } from '../lib/useApi';
-import { cleanName, fmtDate, isBelow, num, pct, relTime, titleCase } from '../lib/format';
+import { alertEvidence, cleanName, fmtDate, isBelow, limitText, num, pct, relTime, titleCase } from '../lib/format';
 import { PageHeader } from '../components/shell';
 import {
   Async, Avatar, Badge, Button, cx, DataTable, Dialog, Drawer, EmptyState, Field, Input, KeyValues, Meter, Notice, Pagination,
@@ -24,6 +24,7 @@ export function StudentsPage() {
   const limit = 50;
   const depts = useApi<DepartmentSummary[]>(me?.role === 'admin' || me?.role === 'placement_officer' ? '/tenant/departments' : null);
   const st = useApi<StudentProfile[]>('/students/', { search, semester, department_id: dept, skip, limit });
+  const count = useApi<{ total: number }>('/students/count', { search, semester, department_id: dept });
   const minAtt = me?.university?.academic_structure?.minimum_attendance_percent ?? 75;
   const title = me?.role === 'mentor' ? 'Mentees' : me?.role === 'faculty' ? 'My students' : 'Students';
   const lede = me?.role === 'faculty' ? 'Students in the sections you teach, plus any your administrator has explicitly shared with you.'
@@ -54,7 +55,7 @@ export function StudentsPage() {
                   <div className="flex items-center gap-2"><Meter value={r.attendance_percentage} threshold={minAtt} className="w-20" /><span className={cx('tnum text-[12.5px]', r.attendance_percentage < minAtt && 'text-bronze font-medium')}>{pct(r.attendance_percentage)}</span></div>) },
                 { key: 'status', header: 'Status', hideOnMobile: true, render: (r) => <StatusBadge status={r.status === 'Active' ? 'active' : r.status} label={r.status} /> },
               ]} />
-            <Pagination total={rows.length < limit && skip === 0 ? rows.length : skip + rows.length + (rows.length === limit ? 1 : 0)} skip={skip} limit={limit} onChange={setSkip} />
+            <Pagination total={count.data?.total ?? skip + rows.length} skip={skip} limit={limit} onChange={setSkip} />
           </>
         )}</Async>
       </Panel>
@@ -161,7 +162,7 @@ function AlertList({ alerts, onOpen }: { alerts: RiskAlert[]; onOpen?: (a: RiskA
       {alerts.map((a) => (
         <li key={a.id} className={cx('px-4 py-3', onOpen && 'cursor-pointer hover:bg-sunken/60')} onClick={onOpen ? () => onOpen(a) : undefined}>
           <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{a.rule_name}</span><div className="flex gap-1.5"><StatusBadge status={a.severity} /><StatusBadge status={a.status} /></div></div>
-          <div className="mt-0.5 text-[12.5px] text-muted">Observed {a.observed_display || a.observed_value} · threshold {a.threshold_display || a.threshold_value} · {fmtDate(a.detected_date)}</div>
+          <div className="mt-0.5 text-[12.5px] text-muted">Observed {alertEvidence(a)} · {fmtDate(a.detected_date)}</div>
         </li>
       ))}
     </ul>
@@ -210,7 +211,7 @@ export function AlertsPage() {
           <>
             <DataTable rows={d.items} onRowClick={(a) => setOpenId(a.id)} empty={<EmptyState title="No alerts match these filters" />} columns={[
               { key: 's', header: 'Student', render: (a) => <div><div className="font-medium">{cleanName(a.student_name)}</div><div className="text-[12px] text-muted">{a.student_usn} · Sem {a.student_semester}</div></div> },
-              { key: 'r', header: 'Rule', render: (a) => <div><div>{a.rule_name}</div><div className="text-[12px] text-muted">{a.observed_display || a.observed_value} vs {a.threshold_display || a.threshold_value}</div></div> },
+              { key: 'r', header: 'Rule', render: (a) => <div><div>{a.rule_name}</div><div className="text-[12px] text-muted">{alertEvidence(a)}</div></div> },
               { key: 'sev', header: 'Severity', render: (a) => <StatusBadge status={a.severity} /> },
               { key: 'st', header: 'Status', hideOnMobile: true, render: (a) => <StatusBadge status={a.status} /> },
               { key: 'm', header: 'Mentor', hideOnMobile: true, render: (a) => a.assigned_mentor_name ? cleanName(a.assigned_mentor_name) : <span className="text-faint">Unassigned</span> },
@@ -246,7 +247,7 @@ function AlertDrawer({ id, onClose, onChanged }: { id: number; onClose: () => vo
       <Async state={a}>{({ alert: x, history }) => (
         <div className="space-y-6">
           <div className="flex gap-1.5"><StatusBadge status={x.severity} /><StatusBadge status={x.status} /></div>
-          <KeyValues items={[['Observed', x.observed_display || x.observed_value], ['Configured threshold', x.threshold_display || x.threshold_value],
+          <KeyValues items={[['Observed', x.observed_display || x.observed_value], ['Alert when', limitText(x.threshold_display, x.threshold_value) || 'Combined rule'],
             ['Period', x.academic_period], ['Raised', fmtDate(x.detected_date, true)], ['Subject', x.subject_name || 'All subjects'], ['Mentor', x.assigned_mentor_name ? cleanName(x.assigned_mentor_name) : 'Unassigned']]} />
           {x.ai_explanation && (
             <div><div className="label mb-1">Explanation of the evidence</div><p className="whitespace-pre-line text-[13px] text-ink">{x.ai_explanation}</p>
@@ -291,7 +292,7 @@ export function InterventionDialog({ studentId, studentName, alertId, defaultTit
 }) {
   const toast = useToast();
   const { me } = useAuth();
-  const students = useApi<StudentProfile[]>(studentId ? null : '/students/', { limit: 100 });
+  const students = useApi<StudentProfile[]>(studentId ? null : '/students/', { limit: 1000 });
   const mentors = useApi<MentorSummary[]>(me?.role === 'admin' ? '/tenant/mentors' : null);
   const [f, setF] = useState({ student_id: studentId ? String(studentId) : '', mentor_id: '', title: defaultTitle || '', intervention_type: 'ACADEMIC_REMEDIAL', priority: 'MEDIUM', initial_notes: '', target_resolution_date: '' });
   const [saving, setSaving] = useState(false);

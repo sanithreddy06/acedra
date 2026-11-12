@@ -30,7 +30,7 @@ router = APIRouter(prefix="/students", tags=["Student Intelligence & Analytics"]
 @router.get("/", response_model=List[StudentProfileOut])
 def list_students(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
     department_id: Optional[int] = None,
     semester: Optional[int] = None,
@@ -52,6 +52,24 @@ def list_students(
         status_filter=status,
     )
     return students
+
+
+@router.get("/count")
+def count_students(
+    search: Optional[str] = None,
+    department_id: Optional[int] = None,
+    semester: Optional[int] = None,
+    section: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """How many students match the same filters as the list (for pagination)."""
+    _, total = StudentIntelligenceService(db).list_students(
+        current_user=current_user, skip=0, limit=1, search=search, department_id=department_id,
+        semester=semester, section=section, status_filter=status,
+    )
+    return {"total": total}
 
 
 @router.post("/", response_model=StudentProfileOut, status_code=status.HTTP_201_CREATED)

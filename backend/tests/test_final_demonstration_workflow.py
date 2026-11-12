@@ -23,7 +23,7 @@ client = TestClient(app)
 
 # --- ACEDRA: the assistant is a private, authenticated feature; AI calls run as the demo student ---
 _ai = TestClient(app)
-_ai_login = _ai.post("/api/v1/auth/login", json={"email": "student@reva-demo.example", "password": "StudentPass123!"})
+_ai_login = _ai.post("/api/v1/auth/login", json={"email": "aarav.sharma@reva.in", "password": "StudentPass123!"})
 _ai.headers.update({"Authorization": f"Bearer {_ai_login.json()['access_token']}"})
 
 
@@ -39,10 +39,10 @@ def test_11_step_end_to_end_demonstration_workflow():
     print("=" * 80)
 
     # Tokens for all personas
-    admin_token = login("admin@reva-demo.example", "AdminPass123!")
-    student_token = login("student@reva-demo.example", "StudentPass123!")
-    mentor_token = login("mentor@reva-demo.example", "MentorPass123!")
-    placement_token = login("placement@reva-demo.example", "PlacementPass123!")
+    admin_token = login("anitha.rao@reva.in", "AdminPass123!")
+    student_token = login("aarav.sharma@reva.in", "StudentPass123!")
+    mentor_token = login("suresh.hegde@reva.in", "MentorPass123!")
+    placement_token = login("rahul.deshpande@reva.in", "PlacementPass123!")
 
     # -------------------------------------------------------------------------
     # STEP 1: Admin imports student records
@@ -50,8 +50,8 @@ def test_11_step_end_to_end_demonstration_workflow():
     print("\n[STEP 1/11] Admin Imports Student Academic Records...")
     csv_data = (
         "usn,name,email,department_code,semester,cgpa\n"
-        "1RV22CS101,Demo Cohort Student 1,demo1@reva-demo.example,CSE,5,7.85\n"
-        "1RV22CS102,Demo Cohort Student 2,demo2@reva-demo.example,CSE,5,6.40\n"
+        "1RV22CS101,Demo Cohort Student 1,demo1@reva.in,CSE,5,7.85\n"
+        "1RV22CS102,Demo Cohort Student 2,demo2@reva.in,CSE,5,6.40\n"
     ).encode("utf-8")
 
     preview_res = client.post(

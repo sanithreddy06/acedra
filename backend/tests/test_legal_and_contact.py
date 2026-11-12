@@ -75,7 +75,7 @@ def test_contact_form_persists_acknowledges_and_reaches_the_platform_inbox(clien
                      headers=auth(EMPLOYEE))
     assert r.status_code == 200 and r.json()["status"] == "in_progress"
     # University accounts cannot see the ACEDRA inbox.
-    assert client.get("/api/v1/platform/contact-messages", headers=auth("admin@reva-demo.example")).status_code == 404
+    assert client.get("/api/v1/platform/contact-messages", headers=auth("anitha.rao@reva.in")).status_code == 404
 
 
 @pytest.mark.parametrize("change,field", [
@@ -101,9 +101,9 @@ def test_contact_honeypot_is_accepted_silently_and_not_stored(client):
 
 # --- acceptance on invitation ---------------------------------------------------------------------
 def test_invitation_acceptance_records_the_reviewed_versions(client, auth):
-    email = "new.faculty.legal@reva-demo.example"
-    dept = client.get("/api/v1/tenant/departments", headers=auth("admin@reva-demo.example")).json()[0]["id"]
-    r = client.post("/api/v1/users/invite", headers=auth("admin@reva-demo.example"),
+    email = "new.faculty.legal@reva.in"
+    dept = client.get("/api/v1/tenant/departments", headers=auth("anitha.rao@reva.in")).json()[0]["id"]
+    r = client.post("/api/v1/users/invite", headers=auth("anitha.rao@reva.in"),
                     json={"email": email, "full_name": "Legal Test Faculty", "role": "faculty", "department_id": dept})
     assert r.status_code == 201, r.text
     token = latest_token(email, "invitation")
@@ -187,7 +187,7 @@ def test_only_super_admins_can_change_legal_documents(client, auth):
     docs = client.get("/api/v1/platform/legal-documents", headers=emp).json()
     assert client.post(f"/api/v1/platform/legal-documents/{docs[0]['id']}/approve", headers=emp,
                        json={"approval_note": "Employee trying to approve"}).status_code == 403
-    for account in ("admin@reva-demo.example", "student@reva-demo.example"):
+    for account in ("anitha.rao@reva.in", "aarav.sharma@reva.in"):
         assert client.get("/api/v1/platform/legal-documents", headers=auth(account)).status_code == 404
         assert client.post("/api/v1/platform/legal-documents", headers=auth(account),
                            json={"doc_type": "terms", "version": "0.3-uni"}).status_code == 404

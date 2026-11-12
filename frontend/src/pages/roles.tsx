@@ -28,7 +28,7 @@ export function FacultyOverview() {
   return (
     <div>
       <PageHeader meta={a.data?.department_name}
-        title={a.data ? `${cap(say(a.data.total_assigned_students))} students across ${say(a.data.assigned_courses?.length || 0)} ${a.data.assigned_courses?.length === 1 ? 'section' : 'sections'}.` : 'Your teaching'}
+        title={a.data ? `${cap(say(a.data.total_assigned_students))} students in ${say(a.data.assigned_courses?.length || 0)} ${a.data.assigned_courses?.length === 1 ? 'course' : 'courses'}.` : 'Your teaching'}
         lede={a.data ? (below.length ? `${cap(say(below.length))} ${below.length === 1 ? 'is' : 'are'} below the ${minAtt}% attendance requirement.` : 'Attendance in your sections is above the requirement.') : undefined} />
       <Async state={a} rows={3}>{(d) => !d.profile_configured ? (
         <Notice title="Your faculty profile hasn’t been set up yet">Your administrator links your account to a department and assigns the sections you teach. Your students will appear here once that is done.</Notice>
@@ -89,12 +89,12 @@ export function MentorOverview() {
           <div className="space-y-6">
             <Panel title="Upcoming follow-ups" padded={false}>
               {det.pending_followups?.length ? <ul className="divide-y divide-line">{det.pending_followups.map((f) => (
-                <li key={f.id} className="flex items-center justify-between gap-3 px-4 py-2.5"><div><div className="font-medium">{cleanName(f.student_name)}</div><div className="text-[12px] text-muted">Intervention #{f.intervention_id}</div></div><span className="text-[13px] tnum">{f.scheduled_date}</span></li>
+                <li key={f.id} className="flex items-center justify-between gap-3 px-4 py-2.5"><div><div className="font-medium">{cleanName(f.student_name)}</div><div className="text-[12px] text-muted">{f.intervention_title || `Case #${f.intervention_id}`}</div></div><span className="text-[13px] tnum">{fmtDate(f.scheduled_date)}</span></li>
               ))}</ul> : <div className="px-4"><EmptyState title="Nothing scheduled" /></div>}
             </Panel>
             <Panel title="Active interventions" padded={false}>
               {det.active_interventions?.length ? <ul className="divide-y divide-line">{det.active_interventions.map((i) => (
-                <li key={i.id} className="px-4 py-2.5"><div className="flex items-center justify-between gap-2"><span className="font-medium">{i.title}</span><StatusBadge status={i.status} /></div><div className="text-[12px] text-muted">{cleanName(i.student_name)} · updated {i.updated_at}</div></li>
+                <li key={i.id} className="px-4 py-2.5"><div className="flex items-center justify-between gap-2"><span className="font-medium">{i.title}</span><StatusBadge status={i.status} /></div><div className="text-[12px] text-muted">{cleanName(i.student_name)} · updated {fmtDate(i.updated_at)}</div></li>
               ))}</ul> : <div className="px-4"><EmptyState title="No active interventions" /></div>}
             </Panel>
           </div>
@@ -139,7 +139,7 @@ export function AdminOverview() {
               { key: 's', header: 'Students', align: 'right', sort: (r) => r.total_students, render: (r) => r.total_students },
               { key: 'c', header: 'Avg CGPA', align: 'right', sort: (r) => r.average_cgpa, render: (r) => num(r.average_cgpa, 2) },
               { key: 'a', header: 'Avg attendance', align: 'right', sort: (r) => r.average_attendance, render: (r) => pct(r.average_attendance, 1) },
-              { key: 'r', header: 'Needing support', align: 'right', sort: (r) => r.at_risk_count, render: (r) => <span className={r.at_risk_count ? 'font-medium text-bronze' : ''}>{r.at_risk_count}</span> },
+              { key: 'r', header: 'With open alerts', align: 'right', sort: (r) => r.at_risk_count, render: (r) => <span className={r.at_risk_count ? 'font-medium text-bronze' : ''}>{r.at_risk_count}</span> },
             ]} />
           </Panel>
           <div className="grid gap-6 lg:grid-cols-3">
@@ -196,7 +196,7 @@ export function PlacementOverview() {
               <DataTable rows={x.details.opportunities} dense empty={<EmptyState title="No open opportunities" />} columns={[
                 { key: 't', header: 'Opportunity', render: (o) => <div><div className="font-medium">{o.title}</div><div className="text-[12px] text-muted">{o.company} · {o.location}</div></div> },
                 { key: 'p', header: 'Package', hideOnMobile: true, render: (o) => o.salary_package },
-                { key: 'd', header: 'Deadline', render: (o) => o.application_deadline },
+                { key: 'd', header: 'Deadline', render: (o) => fmtDate(o.application_deadline) },
               ]} />
             </Panel>
             <Panel title="Career roles" padded={false}>
@@ -216,7 +216,7 @@ export function PlacementOverview() {
 
 export function PlacementReadinessPage() {
   const roles = useApi<CareerRole[]>('/placement/roles');
-  const students = useApi<StudentProfile[]>('/students/', { limit: 100 });
+  const students = useApi<StudentProfile[]>('/students/', { limit: 1000 });
   const [role, setRole] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<StudentProfile | null>(null);
@@ -323,7 +323,7 @@ export function OpportunitiesPage() {
   );
 }
 
-const APP_STATUSES = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'OFFERED', 'REJECTED', 'WITHDRAWN'];
+const APP_STATUSES = ['APPLIED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'OFFERED', 'PLACED', 'REJECTED', 'WITHDRAWN'];
 export function ApplicationsPage() {
   const toast = useToast();
   const [status, setStatus] = useState('');

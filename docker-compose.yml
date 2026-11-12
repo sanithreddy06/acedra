@@ -1,5 +1,5 @@
 # ACEDRA — local stack: PostgreSQL 16 (+pgvector image), FastAPI backend, Nginx-served frontend.
-# Synthetic demo tenants are loaded on first start (SEED_DEMO_DATA=true).
+# Sample universities (REVA University and two others) are loaded on first start (SEED_DEMO_DATA=true).
 services:
   db:
     image: pgvector/pgvector:pg16

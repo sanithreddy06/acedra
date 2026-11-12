@@ -16,19 +16,19 @@ def test_health_check():
 def test_login_success_student():
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "student@reva-demo.example", "password": "StudentPass123!"}
+        json={"email": "aarav.sharma@reva.in", "password": "StudentPass123!"}
     )
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
     assert data["user"]["role"] == "student"
-    assert data["user"]["email"] == "student@reva-demo.example"
+    assert data["user"]["email"] == "aarav.sharma@reva.in"
 
 
 def test_login_invalid_password():
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "student@reva-demo.example", "password": "WrongPassword!"}
+        json={"email": "aarav.sharma@reva.in", "password": "WrongPassword!"}
     )
     assert response.status_code == 401
     assert "detail" in response.json() or "message" in response.json()
@@ -37,7 +37,7 @@ def test_login_invalid_password():
 def test_login_nonexistent_user():
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "unknown@reva-demo.example", "password": "WrongPassword!"}
+        json={"email": "unknown@reva.in", "password": "WrongPassword!"}
     )
     assert response.status_code == 401
 
@@ -46,7 +46,7 @@ def test_rbac_admin_vs_student():
     # Login as Student
     student_res = client.post(
         "/api/v1/auth/login",
-        json={"email": "student@reva-demo.example", "password": "StudentPass123!"}
+        json={"email": "aarav.sharma@reva.in", "password": "StudentPass123!"}
     )
     student_token = student_res.json()["access_token"]
 
@@ -60,7 +60,7 @@ def test_rbac_admin_vs_student():
     # Login as Admin
     admin_res = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@reva-demo.example", "password": "AdminPass123!"}
+        json={"email": "anitha.rao@reva.in", "password": "AdminPass123!"}
     )
     admin_token = admin_res.json()["access_token"]
 
@@ -77,11 +77,11 @@ def test_rbac_admin_vs_student():
 def test_dashboard_dynamic_metrics():
     # Test for each role
     roles_credentials = [
-        ("student@reva-demo.example", "StudentPass123!", "student"),
-        ("faculty@reva-demo.example", "FacultyPass123!", "faculty"),
-        ("mentor@reva-demo.example", "MentorPass123!", "mentor"),
-        ("admin@reva-demo.example", "AdminPass123!", "admin"),
-        ("placement@reva-demo.example", "PlacementPass123!", "placement_officer"),
+        ("aarav.sharma@reva.in", "StudentPass123!", "student"),
+        ("kavya.menon@reva.in", "FacultyPass123!", "faculty"),
+        ("suresh.hegde@reva.in", "MentorPass123!", "mentor"),
+        ("anitha.rao@reva.in", "AdminPass123!", "admin"),
+        ("rahul.deshpande@reva.in", "PlacementPass123!", "placement_officer"),
     ]
 
     for email, pwd, expected_role in roles_credentials:

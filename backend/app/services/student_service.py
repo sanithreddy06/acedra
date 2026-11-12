@@ -614,24 +614,33 @@ class StudentIntelligenceService:
         avg_campus_cgpa = float(self.db.query(func.avg(Student.cgpa)).scalar() or 0.0)
         avg_campus_attendance = float(self.db.query(func.avg(Student.attendance_percentage)).scalar() or 0.0)
 
-        # Department-wise statistics
+        # Department-wise statistics, aggregated in the database (no student rows are loaded).
+        from app.models.risk import RiskAlert
         depts = self.db.query(Department).all()
+        per_dept = {
+            dept_id: (count, cgpa, att)
+            for dept_id, count, cgpa, att in self.db.query(
+                Student.department_id, func.count(Student.id), func.avg(Student.cgpa),
+                func.avg(Student.attendance_percentage)).group_by(Student.department_id).all()
+        }
+        # "Needing support" means the same thing everywhere on the dashboard: students with an open early alert.
+        open_alerts = dict(
+            self.db.query(Student.department_id, func.count(func.distinct(RiskAlert.student_id)))
+            .join(RiskAlert, RiskAlert.student_id == Student.id)
+            .filter(RiskAlert.status.in_(["FLAGGED", "ACKNOWLEDGED", "UNDER_REVIEW"]))
+            .group_by(Student.department_id).all()
+        )
         dept_stats = []
         for d in depts:
-            d_students = self.db.query(Student).filter(Student.department_id == d.id).all()
-            d_count = len(d_students)
-            d_avg_cgpa = sum(s.cgpa for s in d_students) / d_count if d_count > 0 else 0.0
-            d_avg_att = sum(s.attendance_percentage for s in d_students) / d_count if d_count > 0 else 0.0
-            at_risk = sum(1 for s in d_students if s.attendance_percentage < 75.0 or s.cgpa < 6.0)
-
+            d_count, d_avg_cgpa, d_avg_att = per_dept.get(d.id, (0, 0.0, 0.0))
             dept_stats.append(
                 {
                     "department_code": d.code,
                     "department_name": d.name,
                     "total_students": d_count,
-                    "average_cgpa": round(d_avg_cgpa, 2),
-                    "average_attendance": round(d_avg_att, 1),
-                    "at_risk_count": at_risk,
+                    "average_cgpa": round(float(d_avg_cgpa or 0.0), 2),
+                    "average_attendance": round(float(d_avg_att or 0.0), 1),
+                    "at_risk_count": open_alerts.get(d.id, 0),
                     "hod_name": d.hod_name,
                 }
             )

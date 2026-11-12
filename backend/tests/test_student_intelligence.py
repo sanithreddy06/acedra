@@ -14,8 +14,8 @@ def get_token(email: str, password: str) -> str:
 
 
 def test_student_list_admin_and_student_isolation():
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
-    student_token = get_token("student@reva-demo.example", "StudentPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
+    student_token = get_token("aarav.sharma@reva.in", "StudentPass123!")
 
     # 1. Admin lists all students (should see 36 students)
     res_admin = client.get("/api/v1/students/", headers={"Authorization": f"Bearer {admin_token}"})
@@ -28,12 +28,12 @@ def test_student_list_admin_and_student_isolation():
     assert res_student.status_code == 200
     student_list = res_student.json()
     assert len(student_list) == 1
-    assert student_list[0]["email"] == "student@reva-demo.example"
+    assert student_list[0]["email"] == "aarav.sharma@reva.in"
 
 
 def test_student_profile_security_isolation():
-    student_token = get_token("student@reva-demo.example", "StudentPass123!")
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
+    student_token = get_token("aarav.sharma@reva.in", "StudentPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
 
     # Primary student (Alex Mercer) has student_id = 1
     # Another student in the synthetic cohort has student_id = 2
@@ -62,12 +62,12 @@ import time
 
 
 def test_admin_create_and_edit_student():
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
 
     uniq_id = int(time.time() * 1000) % 100000
     new_student_data = {
         "full_name": f"Test Student Acceptance {uniq_id}",
-        "email": f"test.acc{uniq_id}@reva-demo.example",
+        "email": f"test.acc{uniq_id}@reva.in",
         "roll_number": f"ACC-{uniq_id}",
         "usn": f"1RV22ACC{uniq_id:04d}",
         "srn": f"SRN-2022-ACC{uniq_id:04d}",
@@ -105,7 +105,7 @@ def test_admin_create_and_edit_student():
 
 
 def test_calculated_attendance_and_analytics_integrity():
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
 
     # Student 2 Analytics
     res = client.get("/api/v1/students/2/analytics", headers={"Authorization": f"Bearer {admin_token}"})
@@ -127,7 +127,7 @@ def test_calculated_attendance_and_analytics_integrity():
 
 
 def test_student_skill_persistence():
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
 
     skill_payload = {
         "skill_name": "GraphQL API Architecture",
@@ -156,14 +156,14 @@ def test_student_skill_persistence():
 
 
 def test_csv_import_preview_and_validation():
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
 
     uniq = int(time.time() * 1000) % 100000
     # Valid CSV
     valid_csv = (
         "usn,email,name,department,semester,section,roll_number,cgpa,attendance\n"
-        f"1RV22CSV{uniq}1,csv.student{uniq}1@reva-demo.example,CSV Student 1,CSE,5,A,CSV-{uniq}1,8.5,90.0\n"
-        f"1RV22CSV{uniq}2,csv.student{uniq}2@reva-demo.example,CSV Student 2,CSE,5,A,CSV-{uniq}2,7.8,85.0\n"
+        f"1RV22CSV{uniq}1,csv.student{uniq}1@reva.in,CSV Student 1,CSE,5,A,CSV-{uniq}1,8.5,90.0\n"
+        f"1RV22CSV{uniq}2,csv.student{uniq}2@reva.in,CSV Student 2,CSE,5,A,CSV-{uniq}2,7.8,85.0\n"
     )
 
     res_preview = client.post(
@@ -181,8 +181,8 @@ def test_csv_import_preview_and_validation():
     # Invalid CSV (missing USN, duplicate email)
     invalid_csv = (
         "usn,email,name,department,semester,section,roll_number\n"
-        ",no.usn@reva-demo.example,Missing USN,CSE,5,A,CSV-003\n"
-        "1RV22SYN001,student@reva-demo.example,Duplicate User,CSE,5,A,CSV-004\n"
+        ",no.usn@reva.in,Missing USN,CSE,5,A,CSV-003\n"
+        "1RV22SYN001,aarav.sharma@reva.in,Duplicate User,CSE,5,A,CSV-004\n"
     )
 
     res_invalid_preview = client.post(
@@ -198,8 +198,8 @@ def test_csv_import_preview_and_validation():
 
 
 def test_faculty_and_admin_analytics_endpoints():
-    admin_token = get_token("admin@reva-demo.example", "AdminPass123!")
-    faculty_token = get_token("faculty@reva-demo.example", "FacultyPass123!")
+    admin_token = get_token("anitha.rao@reva.in", "AdminPass123!")
+    faculty_token = get_token("kavya.menon@reva.in", "FacultyPass123!")
 
     # Faculty Analytics
     res_faculty = client.get(
@@ -234,6 +234,6 @@ def test_student_update_survives_failed_risk_reevaluation(client, auth, monkeypa
         raise RuntimeError("simulated evaluation failure")
 
     monkeypatch.setattr(RiskService, "evaluate_risk", boom)
-    headers = auth("admin@reva-demo.example")
+    headers = auth("anitha.rao@reva.in")
     r = client.patch("/api/v1/students/2", json={"phone": "+91-90000-00002"}, headers=headers)
     assert r.status_code == 200, r.text

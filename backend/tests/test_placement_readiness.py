@@ -21,11 +21,11 @@ client = TestClient(app)
 
 def get_auth_token(username: str, role: str) -> str:
     login_data = {
-        "student": ("student@reva-demo.example", "StudentPass123!"),
-        "faculty": ("faculty@reva-demo.example", "FacultyPass123!"),
-        "mentor": ("mentor@reva-demo.example", "MentorPass123!"),
-        "admin": ("admin@reva-demo.example", "AdminPass123!"),
-        "placement": ("placement@reva-demo.example", "PlacementPass123!"),
+        "student": ("aarav.sharma@reva.in", "StudentPass123!"),
+        "faculty": ("kavya.menon@reva.in", "FacultyPass123!"),
+        "mentor": ("suresh.hegde@reva.in", "MentorPass123!"),
+        "admin": ("anitha.rao@reva.in", "AdminPass123!"),
+        "placement": ("rahul.deshpande@reva.in", "PlacementPass123!"),
     }
     email, password = login_data[role]
     res = client.post("/api/v1/auth/login", json={"email": email, "password": password})

@@ -25,7 +25,7 @@ from app.models.placement import (
 from app.services.placement_service import PlacementService
 
 
-def seed_module4():
+def seed_module4(sample_profiles: bool = True):
     db = SessionLocal()
     try:
         print(">>> [Module 4 Seeder] Initializing Career Roles and Skill Matrices...")
@@ -35,6 +35,9 @@ def seed_module4():
         print(">>> [Module 4 Seeder] Initializing Corporate Placement & Internship Opportunities...")
         opps = PlacementService.seed_canonical_opportunities(db)
         print(f"✅ Seeded/Verified {len(opps)} placement opportunities.")
+
+        if not sample_profiles:  # the caller's own seed already gave students skills, evidence and applications
+            return
 
         print(">>> [Module 4 Seeder] Enhancing Student Skills & Creating Skill Evidences...")
         students = db.query(Student).all()

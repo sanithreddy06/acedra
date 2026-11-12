@@ -48,6 +48,8 @@ def seed_module3():
         ]
 
         for i, s in enumerate(students):
+            if s.career_goals:  # already declared (the core seed assigns goals by department)
+                continue
             preset = career_presets[i % len(career_presets)]
             s.career_goals = preset[0]
             s.interests = preset[1]
@@ -62,7 +64,7 @@ def seed_module3():
             total_gen += len(recs)
         print(f"✅ Generated {total_gen} personalized recommendations for initial student cohort.")
 
-        # 4. Simulate Student 1 (Alex Mercer) Lifecycle: Accept, Progress, Complete, Feedback
+        # 4. Simulate the first student's lifecycle: Accept, Progress, Complete, Feedback
         student1 = students[0]
         s1_recs = db.query(Recommendation).filter(Recommendation.student_id == student1.id).all()
         mentor = db.query(Mentor).first()
@@ -97,14 +99,14 @@ def seed_module3():
                     "student_id": student1.id,
                     "title": "System Design Primer & Scalable Architecture Review",
                     "category": "PLACEMENT_PREPARATION",
-                    "reason": "Mentor Dr. Sterling identified strong coding skills and recommends focusing on high-level system design for tier-1 campus interviews.",
+                    "reason": "Your mentor, Prof. Suresh Hegde, noted steady progress in core courses and recommends starting system design preparation ahead of next year's campus interviews.",
                     "gap_type": "CAREER_ALIGNMENT",
                     "gap_detail": "Distributed system design interview preparation",
                     "expected_outcome": "Design high-throughput, low-latency microservices with caching strategies.",
                     "priority": "HIGH",
                     "resource_url": "https://github.com/donnemartin/system-design-primer",
                     "suggested_completion_time": "3 Weeks",
-                    "mentor_guidance_notes": "Alex, review the sections on CAP theorem, database sharding, and Redis caching before our mentorship meeting.",
+                    "mentor_guidance_notes": "Aarav, review the sections on CAP theorem, database sharding, and Redis caching before our mentorship meeting.",
                 },
                 mentor_user_id=mentor_user_id,
             )

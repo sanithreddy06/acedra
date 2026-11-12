@@ -28,17 +28,17 @@ def get_auth_token(email: str, password: str = "AdminPass123!"):
 
 @pytest.fixture(scope="module")
 def admin_token():
-    return get_auth_token("admin@reva-demo.example", "AdminPass123!")
+    return get_auth_token("anitha.rao@reva.in", "AdminPass123!")
 
 
 @pytest.fixture(scope="module")
 def student_token():
-    return get_auth_token("student@reva-demo.example", "StudentPass123!")
+    return get_auth_token("aarav.sharma@reva.in", "StudentPass123!")
 
 
 @pytest.fixture(scope="module")
 def faculty_token():
-    return get_auth_token("faculty@reva-demo.example", "FacultyPass123!")
+    return get_auth_token("kavya.menon@reva.in", "FacultyPass123!")
 
 
 # -----------------------------------------------------------------------------

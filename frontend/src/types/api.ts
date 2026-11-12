@@ -140,7 +140,7 @@ export interface MentorDashboard {
       cgpa: number; attendance: number; status: 'At Risk' | 'On Track' }[];
     active_interventions: { id: number; student_name: string; title: string; type: string; priority: string;
       status: string; updated_at: string }[];
-    pending_followups: { id: number; intervention_id: number; student_name: string; scheduled_date: string;
+    pending_followups: { id: number; intervention_id: number; intervention_title?: string | null; student_name: string; scheduled_date: string;
       status: string }[];
     mentee_risk_alerts: { id: number; student_name: string; severity: string; rule: string }[];
   };

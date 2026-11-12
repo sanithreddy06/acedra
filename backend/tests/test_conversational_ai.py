@@ -6,16 +6,16 @@ client = TestClient(app)
 
 # --- ACEDRA: the assistant is a private, authenticated feature; AI calls run as the demo student ---
 _ai = TestClient(app)
-_ai_login = _ai.post("/api/v1/auth/login", json={"email": "student@reva-demo.example", "password": "StudentPass123!"})
+_ai_login = _ai.post("/api/v1/auth/login", json={"email": "aarav.sharma@reva.in", "password": "StudentPass123!"})
 _ai.headers.update({"Authorization": f"Bearer {_ai_login.json()['access_token']}"})
 
-STUDENT_EMAIL = "student@reva-demo.example"
+STUDENT_EMAIL = "aarav.sharma@reva.in"
 STUDENT_PASS = "StudentPass123!"
 
-ADMIN_EMAIL = "admin@reva-demo.example"
+ADMIN_EMAIL = "anitha.rao@reva.in"
 ADMIN_PASS = "AdminPass123!"
 
-FACULTY_EMAIL = "faculty@reva-demo.example"
+FACULTY_EMAIL = "kavya.menon@reva.in"
 FACULTY_PASS = "FacultyPass123!"
 
 

@@ -451,11 +451,11 @@ function DemoAccounts({ onPick }: { onPick: (e: string, p: string) => void }) {
   const rows: [string, string, string][] = [
     ['ACEDRA super administrator', 'superadmin@acedra.example', 'PlatformPass123!'],
     ['ACEDRA employee (REVA, Deccan)', 'arjun.rao@acedra.example', 'PlatformPass123!'],
-    ['REVA · administrator', 'admin@reva-demo.example', 'AdminPass123!'],
-    ['REVA · faculty', 'faculty@reva-demo.example', 'FacultyPass123!'],
-    ['REVA · mentor', 'mentor@reva-demo.example', 'MentorPass123!'],
-    ['REVA · placement officer', 'placement@reva-demo.example', 'PlacementPass123!'],
-    ['REVA · student', 'student@reva-demo.example', 'StudentPass123!'],
+    ['REVA · administrator (Dr. Anitha Rao)', 'anitha.rao@reva.in', 'AdminPass123!'],
+    ['REVA · faculty (Dr. Kavya Menon)', 'kavya.menon@reva.in', 'FacultyPass123!'],
+    ['REVA · mentor (Prof. Suresh Hegde)', 'suresh.hegde@reva.in', 'MentorPass123!'],
+    ['REVA · placement officer (Rahul Deshpande)', 'rahul.deshpande@reva.in', 'PlacementPass123!'],
+    ['REVA · student (Aarav Sharma)', 'aarav.sharma@reva.in', 'StudentPass123!'],
     ['Northfield · administrator', 'admin@northfield.example', 'AdminPass123!'],
     ['Northfield · student', 'student@northfield.example', 'StudentPass123!'],
     ['Deccan Tech · mentor', 'mentor@deccan-tech.example', 'MentorPass123!'],
@@ -464,7 +464,7 @@ function DemoAccounts({ onPick }: { onPick: (e: string, p: string) => void }) {
   return (
     <div className="mt-8 border-t border-line pt-4">
       <button type="button" className="text-[12.5px] text-muted hover:text-ink" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        {open ? 'Hide' : 'Show'} synthetic demo accounts
+        {open ? 'Hide' : 'Show'} demo accounts
       </button>
       {open && (
         <ul className="mt-2 divide-y divide-line rounded border border-line bg-surface">

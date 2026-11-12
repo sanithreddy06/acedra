@@ -1155,7 +1155,7 @@ def _observe_backlogs(m: _StudentRiskMetrics, rule: RiskRule) -> _RuleObservatio
     return _RuleObservation(
         triggered=m.backlog_count > 0 and compare(value, rule.operator, rule.threshold_value),
         value=value,
-        display=f"{m.backlog_count} Active Backlog(s)",
+        display=f"{m.backlog_count} active backlog{'' if m.backlog_count == 1 else 's'}",
         context={"failed_subjects": m.failed_subject_names},
     )
 
@@ -1166,7 +1166,7 @@ def _observe_missing_assessments(m: _StudentRiskMetrics, rule: RiskRule) -> _Rul
     return _RuleObservation(
         triggered=compare(float(missing), rule.operator, rule.threshold_value),
         value=float(missing),
-        display=f"{missing} Missing Evaluation(s)",
+        display="No internal assessment marks recorded" if missing else "Assessment marks recorded",
         context={"subject_name": "Enrolled Curriculum"},
     )
 

@@ -242,7 +242,7 @@ def seed_module6():
                     db.add(Notification(
                         user_id=u.id,
                         title="New Mentee Intervention Assigned",
-                        message="A new academic remedial intervention case has been allocated to you for student Alex Mercer.",
+                        message="A new academic remedial intervention case has been allocated to you for one of your mentees.",
                         notification_type=NotificationType.MENTOR_ASSIGNMENT.value,
                         severity="WARNING",
                         is_read=False,

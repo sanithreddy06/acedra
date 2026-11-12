@@ -12,12 +12,15 @@ ACEDRA in this repository is **prototype-complete**. It is not yet production-re
 
 * **No external security review or penetration test** has been performed. Automated tests attack the main
   isolation paths but are not exhaustive.
+* **Verified outside Docker:** the API in production mode (`ENVIRONMENT=production`, PostgreSQL 16, Redis, four
+  Gunicorn workers) starts, migrates an empty database, bootstraps the first super administrator as documented,
+  and enforces the 20/minute sign-in limit across all workers per visitor address.
 * **The production images have still not been built or run.** The backend image was rewritten (dependencies in
   a virtual environment the non-root user can read; the previous image installed them under `/root`, out of that user's reach), Nginx now terminates
   TLS, and Redis was added, but none of this has been executed. CI builds both images; a smoke test of the full
   stack is the first deployment step.
-* **The tests have only been run on SQLite here.** CI also runs them on PostgreSQL 16; check that run before
-  relying on PostgreSQL behaviour (row locking for refresh tokens and the email outbox in particular).
+* The test suite passes on both SQLite and PostgreSQL 16 (163 tests), and `alembic upgrade head` followed by
+  `alembic check` is clean on PostgreSQL.
 * Tokens are stored in `sessionStorage` (cleared when the tab closes). The CSP no longer allows inline scripts
   and refresh tokens are single use, which limits the damage of a stolen token; httpOnly cookies with CSRF
   protection would reduce it further.
@@ -115,9 +118,11 @@ Known, deliberate gaps in code quality, kept small and listed so they can be sch
 
 ## Data
 
-All bundled data is **synthetic**. The "REVA University (Demo Tenant)" uses a REVA-style structure but contains no
-REVA data and implies no partnership. Its policy documents are marked "[Synthetic]". Northfield University and
-Deccan Institute of Technology are fictional. Real integrations with any institution are future work that needs
+All bundled data is **generated sample data**. "REVA University" is the demonstration client workspace (240
+students, four departments, `@reva.in` addresses): its people, records and policy documents were written for this
+prototype, are not real REVA data and imply no partnership. Keep `EMAIL_PROVIDER=log` while it is loaded so that
+no message is ever sent to a real `reva.in` address. Northfield University and Deccan Institute of Technology are
+fictional and labelled as sample workspaces in the interface. Real integrations with any institution are future work that needs
 that institution's authorisation.
 
 ## Identifiers kept from earlier names

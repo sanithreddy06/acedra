@@ -20,11 +20,11 @@ from app.main import app
 client = TestClient(app)
 
 ROLE_CREDENTIALS = {
-    "student": ("student@reva-demo.example", "StudentPass123!"),
-    "faculty": ("faculty@reva-demo.example", "FacultyPass123!"),
-    "mentor": ("mentor@reva-demo.example", "MentorPass123!"),
-    "admin": ("admin@reva-demo.example", "AdminPass123!"),
-    "placement_officer": ("placement@reva-demo.example", "PlacementPass123!"),
+    "student": ("aarav.sharma@reva.in", "StudentPass123!"),
+    "faculty": ("kavya.menon@reva.in", "FacultyPass123!"),
+    "mentor": ("suresh.hegde@reva.in", "MentorPass123!"),
+    "admin": ("anitha.rao@reva.in", "AdminPass123!"),
+    "placement_officer": ("rahul.deshpande@reva.in", "PlacementPass123!"),
 }
 
 
@@ -100,7 +100,7 @@ def run_benchmarks():
     print("\n[3/5] Benchmarking CSV Import Validation Throughput...")
     csv_rows = ["usn,name,email,department_code,semester,cgpa"]
     for i in range(100):
-        csv_rows.append(f"1RV22CS{i:03d},Bench Student {i},bench{i}@reva-demo.example,CSE,5,8.25")
+        csv_rows.append(f"1RV22CS{i:03d},Bench Student {i},bench{i}@reva.in,CSE,5,8.25")
     csv_content = "\n".join(csv_rows).encode("utf-8")
 
     t0 = time.perf_counter()

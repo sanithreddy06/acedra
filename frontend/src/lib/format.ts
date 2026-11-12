@@ -19,6 +19,22 @@ export const num = (v: Numeric, digits = 1) => (v === null || v === undefined ||
 /** True only for a recorded value below the limit (missing values are never flagged). */
 export const isBelow = (v: number | null | undefined, limit: number) => v !== null && v !== undefined && v < limit;
 export const pct = (v: Numeric, digits = 0) => (v === null || v === undefined || isNaN(Number(v)) ? '—' : `${Number(v).toFixed(digits)}%`);
+/**
+ * A rule threshold in words: "< 75.0%" → "below 75%", ">= 2.0" → "2 or more". Returns '' for combined rules
+ * (stored as "== 1.0"), which have no single threshold to show.
+ */
+export const limitText = (display?: string | null, value?: number | null): string => {
+  const m = (display || '').trim().match(/^(<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)\s*(%?)$/);
+  if (!m) return display || (value === null || value === undefined ? '' : String(value));
+  const [, op, raw, unit] = m;
+  const n = `${Number(raw)}${unit}`;
+  return op === '<' ? `below ${n}` : op === '<=' ? `${n} or less` : op === '>' ? `above ${n}` : op === '>=' ? `${n} or more` : '';
+};
+/** "68.9% (31/45 classes) · alert when below 75%" */
+export const alertEvidence = (a: { observed_display?: string | null; observed_value?: number | null; threshold_display?: string | null; threshold_value?: number | null }): string => {
+  const limit = limitText(a.threshold_display, a.threshold_value);
+  return `${a.observed_display || a.observed_value}${limit ? ` · alert when ${limit}` : ''}`;
+};
 export const titleCase = (s?: string | null) => (s || '').toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 export const initials = (name?: string) => (name || '?').replace(/\[.*?\]/g, '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 export const cleanName = (name?: string | null) => (name || '').replace(/\s*\[Synthetic Demo\]\s*/g, '').trim();

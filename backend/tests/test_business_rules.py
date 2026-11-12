@@ -110,7 +110,7 @@ def test_rule_schema_matches_the_engine():
 
 
 def test_unsupported_rule_indicator_is_rejected(client, auth):
-    headers = auth("admin@reva-demo.example")
+    headers = auth("anitha.rao@reva.in")
     body = {"name": "CGPA watch", "code": "CGPA_WATCH", "category": "ACADEMIC", "indicator_type": "cgpa",
             "operator": "<", "threshold_value": 6}
     r = client.post("/api/v1/risk/rules", json=body, headers=headers)

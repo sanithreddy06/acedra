@@ -5,7 +5,7 @@ Creates:
   * the ACEDRA platform team (super administrator + employees)
   * sample institutional enquiries at different workflow stages
   * three independently configured university tenants:
-      - REVA University (demo tenant)   — REVA-style structure; synthetic records, no real REVA data
+      - REVA University                 — the main client workspace; generated sample records (seed_reva.py)
       - Northfield University            — fictional; stricter attendance policy, trimester terms
       - Deccan Institute of Technology   — fictional; reduced module set, ACEDRA-assisted email request
 
@@ -93,10 +93,10 @@ def seed_platform(db):
     return sa, e1, e2, e3
 
 
-def make_tenant(db, *, name, short, slug, domains, employee, actor, status, modules=None, structure=None,
+def make_tenant(db, *, name, short, slug, domains, employee, actor, status, modules=None, structure=None, sample=True,
                 color="#3F5A40", location=None, itype="Private university", tagline=None, email_mode="existing"):
     uni = University(
-        name=name, short_name=short, slug=slug, status=status, is_synthetic=True, brand_color=color,
+        name=name, short_name=short, slug=slug, status=status, is_synthetic=sample, brand_color=color,
         location=location, institution_type=itype, tagline=tagline,
         enabled_modules=modules or list(ALL_MODULES), student_email_mode=email_mode,
         academic_structure={
@@ -120,16 +120,16 @@ def make_tenant(db, *, name, short, slug, domains, employee, actor, status, modu
 
 
 def seed_reva(uni_id):
-    """REVA-style tenant: reuse the rich Module 0–6 seeds, scoped to this tenant."""
-    import seed_data, seed_module1, seed_module2, seed_module3, seed_module4, seed_module5, seed_module6
+    """REVA University: the core records (seed_reva), then each module's own data on top of them."""
+    import seed_reva as core, seed_reva_activity, seed_module2, seed_module3, seed_module4, seed_module5, seed_module6
     with tenant_context(uni_id):
-        seed_data.seed()
-        seed_module1.seed_module1()
+        core.seed_reva_core()
         seed_module2.seed_module2()
         seed_module3.seed_module3()
-        seed_module4.seed_module4()
+        seed_module4.seed_module4(sample_profiles=False)
         seed_module5.seed_module5_rag_data()
         seed_module6.seed_module6()
+        seed_reva_activity.seed_reva_activity()
 
 
 FIRST = ["Aanya", "Rahul", "Ishita", "Kabir", "Diya", "Aditya", "Meghna", "Rohan", "Sara", "Nikhil", "Tara",
@@ -350,10 +350,12 @@ DECCAN = {
 
 
 def seed_enquiries(db, sa, e1, e2, reva, northfield, deccan):
-    def enquiry(ref, status, uni_name, contact, email, modules, owner, extra=None, university=None, activities=()):
-        e = Enquiry(reference=ref, status=status, university_name=uni_name, institution_type="Private university",
-                    location="Karnataka, India", student_population="5,000 – 15,000", department_count=8,
-                    contact_name=contact, contact_designation="Dean, Academic Affairs", contact_email=email,
+    def enquiry(ref, status, uni_name, contact, email, modules, owner, extra=None, university=None, activities=(),
+                designation="Dean, Academic Affairs", location="Bengaluru, Karnataka", itype="Private university",
+                population="5,000 – 15,000"):
+        e = Enquiry(reference=ref, status=status, university_name=uni_name, institution_type=itype,
+                    location=location, student_population=population, department_count=8,
+                    contact_name=contact, contact_designation=designation, contact_email=email,
                     preferred_contact_method="email", requested_modules=modules, consent_to_contact=True,
                     owner_id=owner.id if owner else None, university_id=university.id if university else None,
                     **(extra or {}))
@@ -365,18 +367,22 @@ def seed_enquiries(db, sa, e1, e2, reva, northfield, deccan):
             db.add(EnquiryActivity(enquiry_id=e.id, kind=kind, body=body, to_status=to, author_id=sa.id))
         return e
 
-    e = enquiry("ENQ-2607-A1B2C3", "active", "REVA University (demo tenant)", "Dr. Synthetic Contact",
-                "dean.academics@reva-demo.example", list(ALL_MODULES), e1, university=reva,
+    e = enquiry("ENQ-2607-A1B2C3", "active", "REVA University", "Dr. Anitha Rao",
+                "anitha.rao@reva.in", list(ALL_MODULES), e1, university=reva,
                 extra={"agreement_reference": "ACD-SA-2026-001", "agreed_modules": list(ALL_MODULES)},
-                activities=[("meeting", "Discovery meeting held with academic office (synthetic).", None),
+                activities=[("meeting", "Discovery meeting held with the academic office.", None),
                             ("agreement", "Service agreement ACD-SA-2026-001 recorded.", None)])
     reva.enquiry_id = e.id
-    e = enquiry("ENQ-2608-D4E5F6", "active", "Northfield University", "Prof. Synthetic Dean",
+    reva.agreement_reference = "ACD-SA-2026-001"
+    e = enquiry("ENQ-2608-D4E5F6", "active", "Northfield University", "Prof. Sunita Kelkar",
                 "registrar@northfield.example", list(ALL_MODULES), e2, university=northfield,
+                designation="Registrar", location="Pune, Maharashtra", itype="Deemed university",
                 extra={"agreement_reference": "ACD-SA-2026-002", "agreed_modules": list(ALL_MODULES)})
     northfield.enquiry_id = e.id
-    e = enquiry("ENQ-2609-778899", "active", "Deccan Institute of Technology", "Dr. Synthetic Principal",
+    northfield.agreement_reference = "ACD-SA-2026-002"
+    e = enquiry("ENQ-2609-778899", "active", "Deccan Institute of Technology", "Dr. Venkat Raman",
                 "principal@deccan-tech.example", ["student_intelligence", "risk_identification", "interventions"], e1,
+                designation="Principal", location="Hyderabad, Telangana", itype="Autonomous college", population="Under 2,000",
                 university=deccan, extra={"agreement_reference": "ACD-SA-2026-003",
                                           "agreed_modules": ["student_intelligence", "risk_identification", "interventions"],
                                           "email_provisioning": "rio_assisted", "has_student_emails": False,
@@ -384,20 +390,24 @@ def seed_enquiries(db, sa, e1, e2, reva, northfield, deccan):
                                           "email_service_estimate": {"accounts": 1200, "unit_cost_inr_per_year": 120.0,
                                                                      "estimated_total_inr_per_year": 144000.0}})
     deccan.enquiry_id = e.id
+    deccan.agreement_reference = "ACD-SA-2026-003"
     db.add(AccountProvisioningRequest(university_id=deccan.id, method="rio_assisted", accounts_requested=1200,
                                       is_chargeable=True, estimated_cost=144000.0, status="estimated",
                                       notes="Recorded from enquiry ENQ-2609-778899 — additional chargeable service.",
                                       requested_by_id=sa.id))
-    enquiry("ENQ-2611-11AA22", "new", "Lakeview College of Engineering", "Ms. Synthetic Coordinator",
+    enquiry("ENQ-2611-11AA22", "new", "Lakeview College of Engineering", "Ms. Rekha Thomas",
             "iqac@lakeview.example", ["student_intelligence", "risk_identification"], None,
+            designation="IQAC Coordinator", location="Kochi, Kerala", itype="Affiliated college", population="2,000 – 5,000",
             extra={"institutional_requirements": "Early warning for first-year students; integration with existing ERP "
                                                  "exports (CSV).", "existing_sis": "Custom ERP"})
-    enquiry("ENQ-2611-33BB44", "meeting_scheduled", "Sahyadri School of Management", "Dr. Synthetic Director",
+    enquiry("ENQ-2611-33BB44", "meeting_scheduled", "Sahyadri School of Management", "Dr. Milind Sathe",
             "director@sahyadri.example", ["placement_readiness", "recommendations", "ai_assistant"], e2,
-            activities=[("contact", "Introductory call completed (synthetic).", None),
+            designation="Director", location="Nashik, Maharashtra", itype="Autonomous college", population="Under 2,000",
+            activities=[("contact", "Introductory call completed.", None),
                         ("meeting", "Product walkthrough scheduled with placement cell.", "meeting_scheduled")])
-    enquiry("ENQ-2610-55CC66", "requirements_gathering", "Coastal University of Science", "Prof. Synthetic HOD",
+    enquiry("ENQ-2610-55CC66", "requirements_gathering", "Coastal University of Science", "Prof. Shalini D'Souza",
             "hod.cse@coastal.example", list(ALL_MODULES), e1,
+            designation="Head, Computer Science", location="Mangaluru, Karnataka", population="15,000 – 30,000",
             extra={"email_provisioning": "rio_assisted", "has_student_emails": False, "accounts_required": 3500,
                    "email_service_estimate": {"accounts": 3500, "unit_cost_inr_per_year": 120.0,
                                               "estimated_total_inr_per_year": 420000.0}})
@@ -425,10 +435,10 @@ def main():
     set_session_scope(db, TenantScope(bypass=True))
     seed_roles(db)
     sa, e1, e2, e3 = seed_platform(db)
-    reva = make_tenant(db, name="REVA University (Demo Tenant)", short="REVA", slug="reva-demo",
-                       domains=["reva-demo.example"], employee=e1, actor=sa, status="active",
+    reva = make_tenant(db, name="REVA University", short="REVA", slug="reva",
+                       domains=["reva.in"], employee=e1, actor=sa, status="active", sample=False,
                        location="Bengaluru, Karnataka", color="#3F5A40",
-                       tagline="Synthetic demonstration workspace — no real REVA data")
+                       tagline="Student success, early support and placement readiness in one workspace")
     northfield = make_tenant(db, name="Northfield University", short="Northfield", slug="northfield",
                              domains=["northfield.example"], employee=e2, actor=sa, status="active",
                              location="Pune, Maharashtra", color="#5B4A3A", itype="Deemed university",
@@ -441,7 +451,7 @@ def main():
     ids = (reva.id, northfield.id, deccan.id)
     db.close()
 
-    print(">>> Seeding REVA demo tenant (Modules 0–6)")
+    print(">>> Seeding REVA University")
     seed_reva(ids[0])
     print(">>> Seeding Northfield University")
     seed_generic(ids[1], "northfield.example", NORTHFIELD, rng)
@@ -450,7 +460,7 @@ def main():
 
     db = SessionLocal()
     set_session_scope(db, TenantScope(bypass=True))
-    db.query(User).filter(User.university_id.isnot(None)).update({User.is_synthetic: True}, synchronize_session=False)
+    db.query(User).filter(User.university_id.in_(ids[1:])).update({User.is_synthetic: True}, synchronize_session=False)
     unis = {u.id: u for u in db.query(University).all()}
     sa, e1, e2 = (db.query(User).filter(User.email == e).first() for e in
                   ("superadmin@acedra.example", "arjun.rao@acedra.example", "fatima.sheikh@acedra.example"))

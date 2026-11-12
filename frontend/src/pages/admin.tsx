@@ -128,7 +128,7 @@ function EditUserDialog({ user, onClose, onDone }: { user: UniversityUser; onClo
 function MentorsTab() {
   const toast = useToast();
   const mentors = useApi<MentorSummary[]>('/tenant/mentors');
-  const students = useApi<StudentProfile[]>('/students/', { limit: 100 });
+  const students = useApi<StudentProfile[]>('/students/', { limit: 1000 });
   const [mentor, setMentor] = useState(''); const [picked, setPicked] = useState<number[]>([]); const [search, setSearch] = useState('');
   const assign = async () => {
     try { const r = await api.post<MessageResult>('/tenant/mentor-assignments', { mentor_id: Number(mentor), student_ids: picked }); toast(r.message); setPicked([]); mentors.reload(); students.reload(); }
@@ -167,7 +167,7 @@ function StaffAccessTab() {
   const toast = useToast();
   const rows = useApi<StaffAccess[]>('/tenant/staff-access');
   const faculty = useApi<UserList>('/users/', { role: 'faculty', limit: 200 });
-  const students = useApi<StudentProfile[]>('/students/', { limit: 100 });
+  const students = useApi<StudentProfile[]>('/students/', { limit: 1000 });
   const [f, setF] = useState({ user_id: '', student_id: '', reason: '' });
   const grant = async () => {
     try { await api.post('/tenant/staff-access', { user_id: Number(f.user_id), student_id: Number(f.student_id), reason: f.reason }); toast('Access shared'); setF({ user_id: '', student_id: '', reason: '' }); rows.reload(); }

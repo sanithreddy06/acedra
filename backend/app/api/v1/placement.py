@@ -28,6 +28,8 @@ from app.schemas.placement import (
     StudentSkillDetailResponse,
 )
 from app.services.placement_service import (
+    APPLICATION_STATUSES,
+    InvalidApplicationStatus,
     PlacementService,
     application_to_response,
     career_role_to_response,
@@ -304,11 +306,14 @@ def update_application_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Placement Officer updates application status (SHORTLISTED, INTERVIEW_SCHEDULED, OFFERED, REJECTED)."""
+    """Placement officer moves an application through the workflow (see APPLICATION_STATUSES).
+    Marking it PLACED records the accepted offer and sets the student's placement status to Placed."""
     if current_user.role not in PLACEMENT_MANAGERS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only placement officers can update application statuses.")
     try:
         app = PlacementService.update_application_status(db, application_id, payload.status, payload.reviewer_notes)
         return application_to_response(app)
+    except InvalidApplicationStatus:
+        raise HTTPException(status_code=422, detail="Status must be one of: " + ", ".join(APPLICATION_STATUSES)) from None
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

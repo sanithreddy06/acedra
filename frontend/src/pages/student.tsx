@@ -4,7 +4,7 @@ import { ExternalLink, Plus } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useApi } from '../lib/useApi';
-import { cleanName, fmtDate, isBelow, num, pct, titleCase } from '../lib/format';
+import { alertEvidence, cleanName, fmtDate, isBelow, limitText, num, pct, titleCase } from '../lib/format';
 import { PageHeader } from '../components/shell';
 import { ChartContainer, TrendLine } from '../components/charts';
 import type { Application, CareerRole, Intervention, OpportunityMatch, PlacementReadiness, Recommendation, StudentAnalytics, StudentRiskProfile } from '../types/api';
@@ -33,7 +33,9 @@ export function StudentOverview() {
   const alerts = (risk.data?.alerts || []).filter((a) => !['RESOLVED', 'CLOSED'].includes(a.status));
   const openRecs = (recs.data || []).filter((r) => ['SUGGESTED', 'ACCEPTED', 'IN_PROGRESS'].includes(r.status));
   const att = analytics.data?.metrics?.calculated_attendance_percentage ?? analytics.data?.student_profile?.attendance_percentage;
-  const lowSubjects = (analytics.data?.attendance_breakdown || []).filter((s) => s.attendance_percentage < minAtt);
+  // A subject already explained by an open alert is not listed a second time.
+  const alertSubjects = new Set(alerts.map((a) => a.subject_name).filter(Boolean));
+  const lowSubjects = (analytics.data?.attendance_breakdown || []).filter((s) => s.attendance_percentage < minAtt && !alertSubjects.has(s.subject_name));
 
   const attention = alerts.length + lowSubjects.length;
   const headline = !analytics.data ? `Welcome back, ${firstName(me?.full_name)}`
@@ -73,7 +75,7 @@ export function StudentOverview() {
                 {alerts.map((a) => (
                   <li key={a.id} className="py-3 first:pt-0 last:pb-0">
                     <div className="flex items-baseline justify-between gap-3"><span className="font-medium">{a.rule_name}</span><StatusBadge status={a.severity} /></div>
-                    <p className="mt-0.5 text-[13px] text-muted">Observed {a.observed_display || a.observed_value} against a threshold of {a.threshold_display || a.threshold_value}. {a.suggested_action}</p>
+                    <p className="mt-0.5 text-[13px] text-muted">Observed {alertEvidence(a)}. {a.suggested_action}</p>
                   </li>
                 ))}
               </ul>
@@ -259,7 +261,7 @@ export function StudentSupport() {
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{a.rule_name}</span><div className="flex gap-1.5"><StatusBadge status={a.severity} /><StatusBadge status={a.status} /></div></div>
                   <div className="mt-2 grid grid-cols-3 gap-3 text-[13px]">
                     <div><div className="label">Observed</div>{a.observed_display || a.observed_value}</div>
-                    <div><div className="label">Threshold</div>{a.threshold_display || a.threshold_value}</div>
+                    <div><div className="label">Alert when</div>{limitText(a.threshold_display, a.threshold_value) || 'Combined rule'}</div>
                     <div><div className="label">Raised</div>{fmtDate(a.detected_date)}</div>
                   </div>
                   {a.suggested_action && <p className="mt-2 text-[13px] text-muted"><span className="font-medium text-ink">Suggested support: </span>{a.suggested_action}</p>}
@@ -398,7 +400,7 @@ export function StudentCareer() {
             <Stat label="Core skills met" value={r.mandatory_skills_met ? 'Yes' : 'Not yet'} />
           </StatStrip>
           <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-            <Panel padded={false} title={`What ${r.target_role?.title || 'this role'} needs`} description="Score weights critical skills more heavily; unverified skills count partially.">
+            <Panel padded={false} title={`What ${r.target_role?.title || 'this role'} needs`} description="Score weights critical skills more heavily; self-reported skills count and are marked for verification.">
               <DataTable rows={r.skill_gaps || []} rowKey={(g) => g.skill_name} columns={[
                 { key: 'skill', header: 'Skill', render: (g) => <div><span className="font-medium">{g.skill_name}</span>{g.is_mandatory && <span className="ml-1.5 text-[11.5px] text-muted">core</span>}</div> },
                 { key: 'need', header: 'Needed', render: (g) => g.required_proficiency },

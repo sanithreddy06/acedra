@@ -21,22 +21,22 @@ client = TestClient(app)
 
 # --- ACEDRA: the assistant is a private, authenticated feature; AI calls run as the demo student ---
 _ai = TestClient(app)
-_ai_login = _ai.post("/api/v1/auth/login", json={"email": "student@reva-demo.example", "password": "StudentPass123!"})
+_ai_login = _ai.post("/api/v1/auth/login", json={"email": "aarav.sharma@reva.in", "password": "StudentPass123!"})
 _ai.headers.update({"Authorization": f"Bearer {_ai_login.json()['access_token']}"})
 
-STUDENT_EMAIL = "student@reva-demo.example"
+STUDENT_EMAIL = "aarav.sharma@reva.in"
 STUDENT_PASS = "StudentPass123!"
 
-ADMIN_EMAIL = "admin@reva-demo.example"
+ADMIN_EMAIL = "anitha.rao@reva.in"
 ADMIN_PASS = "AdminPass123!"
 
-FACULTY_EMAIL = "faculty@reva-demo.example"
+FACULTY_EMAIL = "kavya.menon@reva.in"
 FACULTY_PASS = "FacultyPass123!"
 
-MENTOR_EMAIL = "mentor@reva-demo.example"
+MENTOR_EMAIL = "suresh.hegde@reva.in"
 MENTOR_PASS = "MentorPass123!"
 
-PLACEMENT_EMAIL = "placement@reva-demo.example"
+PLACEMENT_EMAIL = "rahul.deshpande@reva.in"
 PLACEMENT_PASS = "PlacementPass123!"
 
 
@@ -104,7 +104,7 @@ def test_student_forbidden_from_admin_user_directory():
 def test_student_forbidden_from_triggering_data_import():
     """Verify student cannot trigger administrative CSV batch data import."""
     token = get_token(STUDENT_EMAIL, STUDENT_PASS)
-    csv_payload = b"usn,name,email,department_code\n1RV22CS999,Hacker,hacker@reva-demo.example,CSE"
+    csv_payload = b"usn,name,email,department_code\n1RV22CS999,Hacker,hacker@reva.in,CSE"
     res = client.post(
         "/api/v1/imports/preview",
         files={"file": ("hack.csv", io.BytesIO(csv_payload), "text/csv")},
@@ -169,7 +169,7 @@ def test_prompt_injection_system_override_defense():
 @pytest.mark.parametrize("sqli_payload", [
     "' OR '1'='1",
     "'; DROP TABLE users; --",
-    "1 UNION SELECT 1, 'admin', 'pass', 'admin@reva-demo.example' --",
+    "1 UNION SELECT 1, 'admin', 'pass', 'anitha.rao@reva.in' --",
 ])
 def test_sql_injection_resilience_in_queries(sqli_payload: str):
     """Verify search endpoints handle SQL injection strings safely without executing raw queries."""

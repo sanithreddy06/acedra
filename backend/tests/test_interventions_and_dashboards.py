@@ -6,19 +6,19 @@ from app.main import app
 
 client = TestClient(app)
 
-STUDENT_EMAIL = "student@reva-demo.example"
+STUDENT_EMAIL = "aarav.sharma@reva.in"
 STUDENT_PASS = "StudentPass123!"
 
-ADMIN_EMAIL = "admin@reva-demo.example"
+ADMIN_EMAIL = "anitha.rao@reva.in"
 ADMIN_PASS = "AdminPass123!"
 
-FACULTY_EMAIL = "faculty@reva-demo.example"
+FACULTY_EMAIL = "kavya.menon@reva.in"
 FACULTY_PASS = "FacultyPass123!"
 
-MENTOR_EMAIL = "mentor@reva-demo.example"
+MENTOR_EMAIL = "suresh.hegde@reva.in"
 MENTOR_PASS = "MentorPass123!"
 
-PLACEMENT_EMAIL = "placement@reva-demo.example"
+PLACEMENT_EMAIL = "rahul.deshpande@reva.in"
 PLACEMENT_PASS = "PlacementPass123!"
 
 

@@ -46,7 +46,7 @@ def _new_account(client, auth, local, role="placement_officer", password="Harden
 
 # --------------------------------------------------------------------------- reports
 def test_staff_only_see_reports_they_generated(client, auth):
-    admin, faculty = auth("admin@reva-demo.example"), auth("faculty@reva-demo.example")
+    admin, faculty = auth("anitha.rao@reva.in"), auth("kavya.menon@reva.in")
     made = client.post(f"{P}/reports/export", headers=admin, json={"report_type": "RISK_SUMMARY"})
     assert made.status_code == 201, made.text
     admin_report = made.json()["id"]
@@ -59,9 +59,9 @@ def test_staff_only_see_reports_they_generated(client, auth):
 
 
 def test_staff_report_contains_only_their_own_students(client, auth):
-    admin, faculty = auth("admin@reva-demo.example"), auth("faculty@reva-demo.example")
-    visible = {s["usn"] for s in client.get(f"{P}/students/?limit=100", headers=faculty).json()}
-    everyone = {s["usn"] for s in client.get(f"{P}/students/?limit=100", headers=admin).json()}
+    admin, faculty = auth("anitha.rao@reva.in"), auth("kavya.menon@reva.in")
+    visible = {s["usn"] for s in client.get(f"{P}/students/?limit=1000", headers=faculty).json()}
+    everyone = {s["usn"] for s in client.get(f"{P}/students/?limit=1000", headers=admin).json()}
     assert visible and visible < everyone
 
     made = client.post(f"{P}/reports/export", headers=faculty, json={"report_type": "STUDENT_PROGRESS"})
@@ -73,7 +73,7 @@ def test_staff_report_contains_only_their_own_students(client, auth):
 
 
 def test_report_types_are_limited_by_role(client, auth):
-    placement, faculty = auth("placement@reva-demo.example"), auth("faculty@reva-demo.example")
+    placement, faculty = auth("rahul.deshpande@reva.in"), auth("kavya.menon@reva.in")
     assert client.post(f"{P}/reports/export", headers=placement, json={"report_type": "RISK_SUMMARY"}).status_code == 403
     assert client.post(f"{P}/reports/export", headers=placement,
                        json={"report_type": "PLACEMENT_READINESS"}).status_code == 201
@@ -92,16 +92,16 @@ def test_report_cells_cannot_start_a_spreadsheet_formula():
 
 # --------------------------------------------------------------------------- student records
 def test_only_administrators_can_change_a_student_record(client, auth):
-    admin = auth("admin@reva-demo.example")
-    faculty_students = client.get(f"{P}/students/?limit=5", headers=auth("faculty@reva-demo.example")).json()
+    admin = auth("anitha.rao@reva.in")
+    faculty_students = client.get(f"{P}/students/?limit=5", headers=auth("kavya.menon@reva.in")).json()
     sid = faculty_students[0]["id"]
     before = client.get(f"{P}/students/{sid}", headers=admin).json()
 
-    for who in ("faculty@reva-demo.example", "placement@reva-demo.example"):
+    for who in ("kavya.menon@reva.in", "rahul.deshpande@reva.in"):
         r = client.patch(f"{P}/students/{sid}", headers=auth(who), json={"status": "Suspended", "current_semester": 8})
         assert r.status_code == 403, f"{who}: {r.text}"
-    mentee = client.get(f"{P}/students/?limit=1", headers=auth("mentor@reva-demo.example")).json()[0]["id"]
-    assert client.patch(f"{P}/students/{mentee}", headers=auth("mentor@reva-demo.example"),
+    mentee = client.get(f"{P}/students/?limit=1", headers=auth("suresh.hegde@reva.in")).json()[0]["id"]
+    assert client.patch(f"{P}/students/{mentee}", headers=auth("suresh.hegde@reva.in"),
                         json={"status": "Suspended"}).status_code == 403
 
     after = client.get(f"{P}/students/{sid}", headers=admin).json()
@@ -113,7 +113,7 @@ def test_only_administrators_can_change_a_student_record(client, auth):
 
 
 def test_student_can_only_change_own_contact_details(client, auth):
-    student = auth("student@reva-demo.example")
+    student = auth("aarav.sharma@reva.in")
     sid = client.get(f"{P}/auth/me", headers=student).json()["student_id"]
     before = client.get(f"{P}/students/{sid}", headers=student).json()
     r = client.patch(f"{P}/students/{sid}", headers=student,
@@ -125,9 +125,9 @@ def test_student_can_only_change_own_contact_details(client, auth):
 
 # --------------------------------------------------------------------------- placement officer scope
 def test_placement_officer_has_no_individual_risk_or_intervention_access(client, auth):
-    placement = auth("placement@reva-demo.example")
+    placement = auth("rahul.deshpande@reva.in")
     sid = client.get(f"{P}/students/?limit=1", headers=placement).json()[0]["id"]
-    alert_id = client.get(f"{P}/risk/alerts", headers=auth("admin@reva-demo.example")).json()["items"][0]["id"]
+    alert_id = client.get(f"{P}/risk/alerts", headers=auth("anitha.rao@reva.in")).json()["items"][0]["id"]
     assert client.get(f"{P}/risk/alerts", headers=placement).status_code == 403
     assert client.get(f"{P}/risk/alerts/{alert_id}", headers=placement).status_code == 403
     assert client.get(f"{P}/risk/students/{sid}", headers=placement).status_code == 403

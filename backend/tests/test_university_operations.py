@@ -167,7 +167,7 @@ def test_new_university_runs_the_full_student_success_workflow(client, auth):
     assert client.get(f"/api/v1/students/{students['LK24CS002']['id']}", headers=student).status_code == 403
 
     # Tenant and permission boundaries.
-    reva_admin = auth("admin@reva-demo.example")
+    reva_admin = auth("anitha.rao@reva.in")
     assert client.get(f"/api/v1/students/{anu}", headers=reva_admin).status_code == 404
     assert client.get(f"/api/v1/interventions/{cid}", headers=reva_admin).status_code == 404
     assert client.get(f"/api/v1/platform/universities/{uid}/student-directory",
@@ -175,7 +175,7 @@ def test_new_university_runs_the_full_student_success_workflow(client, auth):
 
 
 def test_configuration_rejects_other_tenants_references(client, auth):
-    reva, nf = auth("admin@reva-demo.example"), auth("admin@northfield.example")
+    reva, nf = auth("anitha.rao@reva.in"), auth("admin@northfield.example")
     nf_dept = client.get("/api/v1/tenant/departments", headers=nf).json()[0]["id"]
     r = client.post("/api/v1/academics/subjects", headers=reva,
                     json={"code": "X-CROSS-1", "name": "Cross tenant", "department_id": nf_dept, "semester_number": 1})
@@ -186,7 +186,7 @@ def test_configuration_rejects_other_tenants_references(client, auth):
                     json={"student_id": reva_student, "mentor_id": nf_mentor, "title": "Cross tenant mentor"})
     assert r.status_code == 422
     # Teaching assignments are an administrator action.
-    assert client.post("/api/v1/academics/assignments", headers=auth("faculty@reva-demo.example"),
+    assert client.post("/api/v1/academics/assignments", headers=auth("kavya.menon@reva.in"),
                        json={"faculty_user_id": 1, "subject_id": 1, "semester_id": 1,
                              "academic_year": "2026-2027"}).status_code == 403
 

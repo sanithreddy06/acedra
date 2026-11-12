@@ -14,7 +14,7 @@ def _ids(client, headers, path="/api/v1/students/", **params):
 
 # --- 1. Faculty cross-department visibility -------------------------------------------------------
 def test_shared_cross_department_student_is_listed_and_openable_then_revoked(client, auth):
-    fac_h, admin_h = auth("faculty@reva-demo.example"), auth("admin@reva-demo.example")
+    fac_h, admin_h = auth("kavya.menon@reva.in"), auth("anitha.rao@reva.in")
     fac = _me(client, fac_h)
     visible = _ids(client, fac_h)
     all_students = client.get("/api/v1/students/", headers=admin_h, params={"limit": 100}).json()
@@ -47,7 +47,7 @@ def test_shared_cross_department_student_is_listed_and_openable_then_revoked(cli
 
 
 def test_faculty_list_matches_direct_access_and_never_crosses_tenants(client, auth):
-    fac_h = auth("faculty@reva-demo.example")
+    fac_h = auth("kavya.menon@reva.in")
     visible = _ids(client, fac_h)
     assert visible
     for sid in list(visible)[:5]:
@@ -59,7 +59,7 @@ def test_faculty_list_matches_direct_access_and_never_crosses_tenants(client, au
 
 # --- 2. Term breakdown follows each tenant's academic structure ------------------------------------
 def test_term_breakdown_uses_tenant_structure(client, auth):
-    reva = client.get("/api/v1/students/analytics/admin", headers=auth("admin@reva-demo.example")).json()
+    reva = client.get("/api/v1/students/analytics/admin", headers=auth("anitha.rao@reva.in")).json()
     nf = client.get("/api/v1/students/analytics/admin", headers=auth("admin@northfield.example")).json()
 
     reva_terms = reva["semester_wise_performance"]
@@ -79,7 +79,7 @@ def test_term_breakdown_uses_tenant_structure(client, auth):
 
 # --- 3. Missing faculty profile --------------------------------------------------------------------
 def test_faculty_analytics_without_profile_is_an_explicit_empty_state(client, auth):
-    data = client.get("/api/v1/students/analytics/faculty", headers=auth("admin@reva-demo.example")).json()
+    data = client.get("/api/v1/students/analytics/faculty", headers=auth("anitha.rao@reva.in")).json()
     assert data["profile_configured"] is False
     assert data["faculty_id"] is None
     assert data["assigned_courses"] == [] and data["students_summary"] == []
@@ -87,7 +87,7 @@ def test_faculty_analytics_without_profile_is_an_explicit_empty_state(client, au
 
 
 def test_faculty_analytics_with_profile_lists_only_their_cohort(client, auth):
-    fac_h = auth("faculty@reva-demo.example")
+    fac_h = auth("kavya.menon@reva.in")
     data = client.get("/api/v1/students/analytics/faculty", headers=fac_h).json()
     assert data["profile_configured"] is True and data["faculty_id"]
     cohort = {s["id"] for s in data["students_summary"]}
@@ -132,7 +132,7 @@ def test_generation_is_additive_and_force_withdraws_only_untouched_suggestions(c
 
 
 def test_force_regeneration_requires_access_to_the_student(client, auth):
-    other = client.get("/api/v1/students/", headers=auth("admin@reva-demo.example")).json()[0]["id"]
+    other = client.get("/api/v1/students/", headers=auth("anitha.rao@reva.in")).json()[0]["id"]
     r = client.post(f"/api/v1/recommendations/generate/{other}", headers=auth("admin@northfield.example"),
                     params={"force_regenerate": True})
     assert r.status_code == 404

@@ -20,7 +20,8 @@ The ACEDRA team runs a separate **platform workspace** for enquiries, onboarding
 assigned to each university, and audited student-data access grants. A public website introduces ACEDRA and
 collects institutional enquiries. There is no public sign-up.
 
-> All bundled data is **synthetic**. The REVA demo tenant contains no REVA data and implies no partnership.
+> All bundled data is **generated sample data**. The REVA University workspace is a demonstration client: its people,
+> records and policy documents were written for this prototype, are not real REVA data, and imply no partnership.
 
 ## Quick start
 
@@ -37,18 +38,24 @@ cd frontend && npm install && npm run dev          # open http://localhost:5173
 
 Or with Docker (PostgreSQL included): `docker compose up --build`, then open http://localhost:3000.
 
-## Demo accounts (synthetic)
+## Demo accounts
 
 | Workspace | Email | Password |
 |---|---|---|
 | ACEDRA super administrator | superadmin@acedra.example | PlatformPass123! |
 | ACEDRA employee (assigned to REVA and Deccan Tech) | arjun.rao@acedra.example | PlatformPass123! |
 | ACEDRA employee (coordination only) | vikram.nair@acedra.example | PlatformPass123! |
-| REVA demo: administrator / faculty / mentor / placement / student | admin@ · faculty@ · mentor@ · placement@ · student@reva-demo.example | AdminPass123! · FacultyPass123! · MentorPass123! · PlacementPass123! · StudentPass123! |
-| Northfield University (80% attendance rule, terms) | same pattern @northfield.example | same passwords |
+| REVA University · administrator (Dr. Anitha Rao) | anitha.rao@reva.in | AdminPass123! |
+| REVA University · faculty (Dr. Kavya Menon) | kavya.menon@reva.in | FacultyPass123! |
+| REVA University · mentor (Prof. Suresh Hegde) | suresh.hegde@reva.in | MentorPass123! |
+| REVA University · placement officer (Rahul Deshpande) | rahul.deshpande@reva.in | PlacementPass123! |
+| REVA University · student (Aarav Sharma) | aarav.sharma@reva.in | StudentPass123! |
+| Northfield University (80% attendance rule, terms) | admin@ · faculty@ · mentor@ · placement@ · student@northfield.example | AdminPass123! · FacultyPass123! · MentorPass123! · PlacementPass123! · StudentPass123! |
 | Deccan Institute of Technology (3 modules enabled) | same pattern @deccan-tech.example | same passwords |
 
-The sign-in page lists these under "Show synthetic demo accounts" in development builds only.
+Every REVA account uses a `firstname.lastname@reva.in` address; other staff and students share the password of
+their role. The sign-in page lists these under "Show demo accounts" in development builds only. Email is not sent
+in development (`EMAIL_PROVIDER=log`), so nothing is ever delivered to a real `reva.in` mailbox.
 
 ## Repository
 

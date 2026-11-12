@@ -4,9 +4,9 @@ from app.core.tenancy import TenantScope, set_session_scope
 from app.models import Document, RiskAlert, Student, User
 from app.models.platform import University
 
-REVA_ADMIN = "admin@reva-demo.example"
+REVA_ADMIN = "anitha.rao@reva.in"
 NF_ADMIN = "admin@northfield.example"
-REVA_STUDENT = "student@reva-demo.example"
+REVA_STUDENT = "aarav.sharma@reva.in"
 NF_STUDENT = "student@northfield.example"
 DT_STUDENT = "student@deccan-tech.example"
 SUPER = "superadmin@acedra.example"
@@ -16,10 +16,10 @@ def _ids():
     db = SessionLocal()
     set_session_scope(db, TenantScope(bypass=True))
     unis = {u.slug: u.id for u in db.query(University).all()}
-    reva_student = db.query(Student).filter(Student.university_id == unis["reva-demo"]).order_by(Student.id).first().id
+    reva_student = db.query(Student).filter(Student.university_id == unis["reva"]).order_by(Student.id).first().id
     nf_students = [s.id for s in db.query(Student).filter(Student.university_id == unis["northfield"]).all()]
-    reva_alert = db.query(RiskAlert).filter(RiskAlert.university_id == unis["reva-demo"]).first().id
-    reva_doc = db.query(Document).filter(Document.university_id == unis["reva-demo"]).first().id
+    reva_alert = db.query(RiskAlert).filter(RiskAlert.university_id == unis["reva"]).first().id
+    reva_doc = db.query(Document).filter(Document.university_id == unis["reva"]).first().id
     reva_user = db.query(User).filter(User.email == REVA_STUDENT).first().id
     db.close()
     return unis, reva_student, nf_students, reva_alert, reva_doc, reva_user
@@ -27,7 +27,7 @@ def _ids():
 
 def test_university_admin_sees_only_own_students(client, auth):
     unis, reva_student, nf_students, *_ = _ids()
-    r = client.get("/api/v1/students/?limit=100", headers=auth(NF_ADMIN))
+    r = client.get("/api/v1/students/?limit=1000", headers=auth(NF_ADMIN))
     assert r.status_code == 200
     ids = {s["id"] for s in r.json()}
     assert ids and ids <= set(nf_students)
@@ -83,7 +83,7 @@ def test_disabled_module_is_blocked(client, auth):
 def test_student_cannot_reach_admin_or_platform_endpoints(client, auth):
     h = auth(REVA_STUDENT)
     assert client.get("/api/v1/users/", headers=h).status_code == 403
-    assert client.post("/api/v1/users/invite", json={"email": "x@reva-demo.example", "full_name": "X Y",
+    assert client.post("/api/v1/users/invite", json={"email": "x@reva.in", "full_name": "X Y",
                                                      "role": "admin"}, headers=h).status_code == 403
     assert client.patch("/api/v1/tenant/settings", json={"tagline": "pwned"}, headers=h).status_code == 403
     assert client.post("/api/v1/risk/rules", json={}, headers=h).status_code in (403, 422)
@@ -98,7 +98,7 @@ def test_university_admin_cannot_use_platform_or_assign_platform_roles(client, a
     assert client.get("/api/v1/platform/overview", headers=h).status_code == 404
     assert client.post("/api/v1/platform/universities/1/primary-employee", json={"employee_id": 1},
                        headers=h).status_code == 404
-    r = client.post("/api/v1/users/invite", json={"email": "evil@reva-demo.example", "full_name": "Evil",
+    r = client.post("/api/v1/users/invite", json={"email": "evil@reva.in", "full_name": "Evil",
                                                   "role": "platform_admin"}, headers=h)
     assert r.status_code == 422
     r = client.patch("/api/v1/tenant/settings", json={"academic_structure": {"cgpa_max": 4}}, headers=h)
@@ -118,7 +118,7 @@ def test_faculty_limited_to_assigned_sections(client, auth):
     assert allowed and others
     assert client.get(f"/api/v1/students/{next(iter(allowed))}", headers=h).status_code == 200
     assert client.get(f"/api/v1/students/{others[0]}", headers=h).status_code == 403
-    listed = {s["id"] for s in client.get("/api/v1/students/?limit=100", headers=h).json()}
+    listed = {s["id"] for s in client.get("/api/v1/students/?limit=1000", headers=h).json()}
     assert listed <= allowed
 
 
@@ -161,7 +161,7 @@ def test_platform_accounts_cannot_read_student_records(client, auth):
 def test_conversations_are_private_to_their_owner(client, auth):
     a = auth(REVA_STUDENT)
     conv = client.post("/api/v1/ai/conversations", json={"mode": "PERSONAL_MODE_B", "title": "mine"}, headers=a).json()
-    other = auth("rohan.iyer@reva-demo.example")
+    other = auth("rohan.iyer@reva.in")
     assert client.get(f"/api/v1/ai/conversations/{conv['id']}", headers=other).status_code == 404
     assert client.post(f"/api/v1/ai/conversations/{conv['id']}/messages", json={"content": "my cgpa?"},
                        headers=other).status_code == 404

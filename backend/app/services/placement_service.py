@@ -43,6 +43,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CAREER_ROLE_CODE = "SOFTWARE_DEVELOPER"
 
+# Application workflow: APPLIED -> SHORTLISTED -> INTERVIEW_SCHEDULED -> OFFERED -> PLACED (offer accepted),
+# or REJECTED / WITHDRAWN at any point.
+APPLICATION_STATUSES = ("APPLIED", "SHORTLISTED", "INTERVIEW_SCHEDULED", "OFFERED", "PLACED", "REJECTED", "WITHDRAWN")
+
+
+class InvalidApplicationStatus(ValueError):
+    pass
+
+
 PROFICIENCY_WEIGHTS = {
     "beginner": 1,
     "intermediate": 2,
@@ -1406,9 +1415,21 @@ class PlacementService:
         if not app:
             raise ValueError(f"Application {application_id} not found")
 
+        if status not in APPLICATION_STATUSES:
+            raise InvalidApplicationStatus(status)
         app.status = status
         if reviewer_notes is not None:
             app.reviewer_notes = reviewer_notes
+        # A student is "Placed" exactly while they hold an accepted offer.
+        student = app.student
+        if student is not None:
+            db.flush()
+            holds_offer = db.query(StudentApplication.id).filter(
+                StudentApplication.student_id == student.id, StudentApplication.status == "PLACED").first() is not None
+            if holds_offer:
+                student.placement_status = "Placed"
+            elif student.placement_status == "Placed":
+                student.placement_status = "Eligible"
         db.commit()
         db.refresh(app)
         return app

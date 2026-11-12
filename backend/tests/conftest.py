@@ -24,6 +24,10 @@ from app.main import app
 
 PASSWORDS = {"admin": "AdminPass123!", "faculty": "FacultyPass123!", "mentor": "MentorPass123!",
              "placement": "PlacementPass123!", "student": "StudentPass123!"}
+# REVA University accounts are named after people; the first account of each role is used in the tests.
+REVA = {"admin": "anitha.rao@reva.in", "faculty": "kavya.menon@reva.in", "mentor": "suresh.hegde@reva.in",
+        "placement": "rahul.deshpande@reva.in", "student": "aarav.sharma@reva.in"}
+REVA_PASSWORDS = {email: PASSWORDS[role] for role, email in REVA.items()}
 
 
 @pytest.fixture(scope="session")
@@ -37,6 +41,8 @@ _token_cache = {}
 def login(client, email, password=None):
     if email in _token_cache:
         return _token_cache[email]
+    if password is None and email in REVA_PASSWORDS:
+        password = REVA_PASSWORDS[email]
     if password is None:
         local = email.split("@")[0]
         password = "PlatformPass123!" if email.endswith("acedra.example") else PASSWORDS.get(
