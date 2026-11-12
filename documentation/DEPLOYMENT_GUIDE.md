@@ -34,8 +34,24 @@ synthetic tenants **only if the database has no universities**. Set `SEED_DEMO_D
 
 ## 3. Production
 
-1. `cp .env.production.example .env.production` and fill in every value. The API refuses to start with a
-   default or short `SECRET_KEY`, wildcard CORS, a SQLite URL or a `PUBLIC_APP_URL` that is not `https://`.
+1. `cp .env.production.example .env.production` and fill in every value. In production the API checks its
+   configuration before it touches the database and **refuses to start** with any of the following, so a
+   development setting cannot reach a live system:
+
+   | Refused in production | Why |
+   |---|---|
+   | `SECRET_KEY` missing, shorter than 32 characters, the built-in development value, or trivially repetitive | Tokens could be forged |
+   | `DATABASE_URL` pointing at SQLite, or containing a development password | Not a production database |
+   | `CORS_ORIGINS` of `*`, or any origin or `PUBLIC_APP_URL` on `localhost` / `127.0.0.1` | Development origins |
+   | `PUBLIC_APP_URL` not starting with `https://` | Invitation and reset links would be sent over plain HTTP |
+   | `EMAIL_PROVIDER` other than `smtp`, or no `SMTP_HOST` | With `log`, invitations and resets are never delivered |
+   | `EMAIL_FROM` left at the built-in `acedra.local` address | Mail would be rejected or misattributed |
+   | `SEED_DEMO_DATA=true` | The sample universities use published demonstration passwords |
+   | `ALLOW_INSECURE_DEV_SECRET=true` | Development-only switch |
+
+   The seed script itself also refuses to run with `ENVIRONMENT=production`. The API documentation pages
+   (`/docs`, `/redoc`) and the OpenAPI schema are not served in production. Use a database password made of
+   letters and digits: the compose file places it inside a connection URL.
 2. **TLS certificate.** Nginx terminates HTTPS itself and will not start without a certificate. Put
    `fullchain.pem` and `privkey.pem` for your hostname in `TLS_CERT_DIR` (default `./docker/certs`, git-ignored):
    * from your certificate authority, or
@@ -78,9 +94,12 @@ PY
    Privacy versions the next time they use ACEDRA.
 8. Set `PUBLIC_APP_URL` to the public HTTPS origin so invitation and reset links are correct.
 
-> The production images have been reviewed but **not yet built or run** in this repository's history (no Docker
-> was available where the changes were made). The CI workflow builds both images on every push; treat its first
-> green run, followed by a smoke test of the stack with a self-signed certificate, as the real verification.
+> **Image build status.** The two production images and the Nginx configuration have **not** been built or run:
+> the verification environment could not download base images. Everything the images contain was exercised
+> outside Docker instead (the pinned requirements on Python 3.12, the entrypoint as a non-root user, Gunicorn
+> with four workers, PostgreSQL 16, Redis, SMTP delivery); see `documentation/RELEASE_VERIFICATION.md`. Before
+> going live, run the stack once with a self-signed certificate and confirm that both containers become healthy,
+> that `https://<host>/` loads and `http://` redirects, and that `https://<host>/api/health` answers.
 
 ### Optional providers
 
@@ -127,28 +146,118 @@ data through the import centre.
 
 ## 5. Backup and restore
 
+Both scripts need the PostgreSQL client tools (`pg_dump`, `psql`) of the same major version as the server (16).
+
+**Back up**
+
 ```bash
-DATABASE_URL=postgresql://user:pass@host:5432/acedra ./database/backup_db.sh ./database/backups
-DATABASE_URL=postgresql://user:pass@host:5432/acedra ./database/restore_db.sh ./database/backups/<file>.sql.gz
+DATABASE_URL=postgresql://user:pass@host:5432/acedra ./database/backup_db.sh /secure/backups
 ```
 
-For SQLite the scripts copy `acedra.db`. Schedule backups daily and test a restore before going live.
+This writes `acedra_pg_<timestamp>.sql.gz` (a plain SQL dump without ownership or privilege statements, readable
+only by its owner), verifies that the archive can be read back, records its SHA-256 in a `.sha256` file beside
+it, and removes ACEDRA backups in that directory older than `BACKUP_RETENTION_DAYS` (default 14). If `pg_dump`
+fails, nothing is written and the script exits with an error.
+
+With the production compose stack the database publishes no port, so run the dump inside the database container
+and compress it on the host:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db \
+  pg_dump --no-owner --no-privileges -U acedra acedra | gzip -9 > /secure/backups/acedra_pg_$(date +%Y%m%d_%H%M%S).sql.gz
+```
+
+Schedule it daily (cron or a systemd timer), copy the files off the server, and keep them encrypted: a backup
+contains every student record.
+
+**Restore** (always into a new, empty database first)
+
+```bash
+createdb -O acedra acedra_restored
+DATABASE_URL=postgresql://user:pass@host:5432/acedra_restored ./database/restore_db.sh /secure/backups/acedra_pg_<timestamp>.sql.gz
+```
+
+The restore checks the archive and its checksum, refuses a target that already has tables (unless `--force`),
+runs in a single transaction and stops at the first error, so a failed restore leaves the target unchanged.
+Check the result (`alembic current` should report the head revision; sign in), then point `DATABASE_URL` at the
+restored database and restart the API. Inside the compose stack:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production stop backend
+docker compose -f docker-compose.prod.yml --env-file .env.production exec -T db createdb -U acedra acedra_restored
+gunzip -c /secure/backups/acedra_pg_<timestamp>.sql.gz | docker compose -f docker-compose.prod.yml --env-file .env.production \
+  exec -T db psql -U acedra -d acedra_restored --set ON_ERROR_STOP=1 --single-transaction
+# then set POSTGRES_DB=acedra_restored in .env.production and start the backend again
+```
+
+`scripts/verification/compare_postgres_databases.py <source-url> <restored-url>` compares two databases table by
+table (row counts and content hashes) and their sequences. A restore test with it is part of the release
+verification (`documentation/RELEASE_VERIFICATION.md`). **Repeat a restore test on your own infrastructure
+before going live, and at least quarterly.**
+
+For SQLite (development only) the scripts copy `acedra.db` (or `$SQLITE_PATH`); a restore first keeps the
+existing file as `acedra.db.before-restore-<timestamp>`.
 
 ## 6. Health
 
 * `GET /health`: process is up
 * `GET /ready`: database reachable; reports the configured AI and email providers
 
-## 7. Tests
+## 7. Tests and security checks
 
 ```bash
 cd backend && python -m pytest -q --ignore=tests/benchmark_performance.py
 # against PostgreSQL:
 TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/acedra_test python -m pytest -q --ignore=tests/benchmark_performance.py
 cd frontend && npm run lint && npm run typecheck && npm run build
+
+# dependency vulnerabilities
+pip install pip-audit && pip-audit -r backend/requirements.txt
+cd frontend && npm audit
+
+# secrets: working tree against the reviewed baseline, then every commit in the history
+pip install detect-secrets==1.5.0
+git ls-files -z -- . ':!documentation/archive_v0.1' ':!frontend/package-lock.json' ':!frontend/src/types/openapi.ts' \
+  | xargs -0 detect-secrets-hook --baseline .secrets.baseline
+python scripts/scan_git_history.py
 ```
 
+`.secrets.baseline` lists the known development placeholders (the built-in development secret, the published
+demonstration passwords, example connection strings); each entry has been reviewed. A new finding fails the
+check: remove the secret (and rotate it if it was ever real), or, for a new placeholder, regenerate the baseline
+with `detect-secrets scan` using the same exclusions and review the difference.
+
 `.github/workflows/ci.yml` runs all of this on every push and pull request: Ruff, `alembic check`, the tests on
-SQLite and on PostgreSQL 16, the frontend lint, typecheck and build, and a build of both production images.
+SQLite and on PostgreSQL 16, the frontend lint, typecheck and build, `pip-audit`, `npm audit`, detect-secrets,
+the history scanner, gitleaks, and a build of both production images.
+
+## 8. Building a release
+
+```bash
+./scripts/make_release.sh            # version from backend/app/core/config.py
+```
+
+The script builds `release/acedra-<version>/` and `release/acedra-<version>.tar.gz` from the current commit. Only
+tracked files are included, so no Git metadata, database, backup, recovery archive, cache, `.env` file or TLS
+material can be in it; the v0.1 documentation archive is left out too. It refuses to run with uncommitted
+changes, re-checks the output for forbidden files, and writes `MANIFEST.txt` with the SHA-256 of every file.
+
+## 9. Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Backend container exits at once with `Invalid ACEDRA configuration: …` | The message lists every refused setting (see the table in section 3). Fix `.env.production` and start again; nothing was changed in the database |
+| `required variable … is missing a value` from `docker compose` | A mandatory value in `.env.production` is empty (`SECRET_KEY`, `POSTGRES_PASSWORD`, `CORS_ORIGINS`, `PUBLIC_APP_URL`, `EMAIL_FROM`, `SMTP_HOST`), or `--env-file .env.production` was left off the command |
+| Frontend container restarts; log shows `cannot load certificate "/etc/nginx/certs/fullchain.pem"` | No certificate in `TLS_CERT_DIR`. Add `fullchain.pem` and `privkey.pem`, or run `./docker/make-selfsigned-cert.sh` for a smoke test |
+| Backend unhealthy; log shows a database authentication or connection error | `POSTGRES_PASSWORD` differs from the one the database volume was first created with, or it contains characters that break the URL (`@ : / ? #`). Use letters and digits |
+| Invitation or reset email never arrives | Platform → Email outbox shows each message as `queued`, `sent` or `failed` with the relay's error and the number of attempts. Failed messages are retried up to `EMAIL_MAX_ATTEMPTS`; fix the SMTP settings and they go out on the next pass |
+| Sign-in answers 429 "Too many failed sign-in attempts" | The account is locked for `LOGIN_LOCKOUT_MINUTES` after `LOGIN_MAX_FAILED_ATTEMPTS` wrong passwords. Wait, or use "Forgot password": a reset unlocks it |
+| Any request answers 429 with a rate-limit message | More than the allowed requests from one address (sign-in 20/minute, everything else 240/minute). If every user shares one limit, the API is not seeing real visitor addresses: it must be reached only through the bundled Nginx |
+| API answers 428 after signing in | A newer Terms or Privacy version has been published and `LEGAL_ACCEPTANCE_ENFORCED=true`. The web app shows the acceptance screen; API clients call `GET /auth/legal-status` then `POST /auth/legal-acceptances` with the current version of **both** documents |
+| 409 "This conflicts with an existing record" | A unique value is already in use (USN, employee ID, department or subject code, email) |
+| `alembic check` reports differences after an upgrade | Run `alembic upgrade head`. A development database created by the app itself has no `alembic_version`; see section 4 |
+| Sample data does not load in Docker | It loads only when `SEED_DEMO_DATA=true`, the environment is not production, and the database has no universities yet |
+| Sign-in page shows no demo accounts | They are listed only in development builds (`npm run dev`) |
+| Restore refuses with "the target database already has N table(s)" | By design. Restore into a new, empty database, or pass `--force` |
 
 Each run creates and seeds its own isolated database.

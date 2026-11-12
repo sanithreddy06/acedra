@@ -64,31 +64,41 @@ acedra/
 ├── backend/          FastAPI · SQLAlchemy · Alembic
 │   ├── app/          api/ · core/ (tenancy.py, access.py, config.py) · models/ · schemas/ · services/ · repositories/
 │   │                 legal_content/ (bundled draft Terms, Privacy and Cookie policies)
-│   ├── alembic/      migrations (0001 baseline, 0002 legal documents and contact messages)
+│   ├── alembic/      migrations (0001 baseline, 0002 legal documents and contact messages, 0003 lockout and email queue)
 │   ├── scripts/      export_openapi.py (feeds the frontend type generator)
 │   └── tests/        isolation, roles, workflows, business rules, response privacy, assistant grounding
 ├── frontend/         React · TypeScript · Vite · Tailwind · Recharts · Lucide
 │   ├── public/       favicon, touch icon, share image
 │   └── src/          types/ · lib/ (incl. consent, site) · components/ (brand, ui, shell, access, charts, chat, legal) · pages/
-├── database/         seeds/ (synthetic tenants, demo-data rebrand), backups/, backup and restore scripts
+├── database/         seeds/ (sample universities; refused in production), backup_db.sh, restore_db.sh
 ├── datasets/         sample CSV/JSON files for trying the import centre
 ├── docker/           Dockerfiles, entrypoint (migrate → optional seed), nginx
-├── documentation/    ARCHITECTURE · SECURITY_AND_RBAC · DEPLOYMENT_GUIDE · KNOWN_LIMITATIONS · archive_v0.1/
+├── documentation/    ARCHITECTURE · SECURITY_AND_RBAC · DEPLOYMENT_GUIDE (deployment, backup, troubleshooting) ·
+│                     KNOWN_LIMITATIONS · RELEASE_VERIFICATION · archive_v0.1/
+├── scripts/          make_release.sh · scan_git_history.py · verification/ (the release checks, re-runnable)
+├── .github/workflows/ci.yml   lint, tests on SQLite and PostgreSQL, audits, secret scanning, image builds
 ├── docker-compose.yml · docker-compose.prod.yml
-└── .env.example · .env.production.example
+└── .env.example · .env.production.example · .secrets.baseline
 ```
 
 ## Tests and checks
 
 ```bash
 # backend (from backend/)
-python -m pytest -q --ignore=tests/benchmark_performance.py   # tests
+python -m pytest -q --ignore=tests/benchmark_performance.py   # tests (165; SQLite by default)
+TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/acedra_test python -m pytest -q   # same, on PostgreSQL
 ruff check .                                                  # lint (config in backend/ruff.toml)
+pip-audit -r requirements.txt                                 # dependency vulnerabilities (pip install pip-audit)
 
 # frontend (from frontend/)
 npm run typecheck      # TypeScript
 npm run lint           # ESLint
 npm run build          # production build
+npm audit              # dependency vulnerabilities (0 at this release)
+
+# repository (from the root)
+python scripts/scan_git_history.py     # credentials in any commit
+./scripts/make_release.sh              # clean release directory and archive in release/
 npm run gen:api        # regenerate src/types/openapi.ts after changing backend schemas (backend venv active)
 ```
 
@@ -125,4 +135,9 @@ A few internal identifiers keep the old name for compatibility (see `documentati
 
 ## Status
 
-**Prototype-complete. Not production- or institution-ready.** See `documentation/KNOWN_LIMITATIONS.md`.
+**Version 1.0.0-rc.1 — release candidate.** What was executed to verify it, with the actual results, is in
+`documentation/RELEASE_VERIFICATION.md`; what is still open is in `documentation/KNOWN_LIMITATIONS.md`. In short:
+the application, its migrations, backup and restore, tenant isolation, permissions, sign-in protection and rate
+limiting are verified on PostgreSQL 16 in production mode; the Docker images and the Nginx TLS configuration have
+not yet been built or run, and there has been no external security review. Deployment, backup and
+troubleshooting: `documentation/DEPLOYMENT_GUIDE.md`. Security model: `documentation/SECURITY_AND_RBAC.md`.

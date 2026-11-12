@@ -72,7 +72,8 @@ app = FastAPI(
     version=settings.VERSION,
     description="ACEDRA — University Intelligence. Connected. Multi-tenant API for student analytics, early warning, "
                 "recommendations, placement readiness, AI assistance and intervention tracking.",
-    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
+    # The interactive docs and the machine-readable schema are development aids; neither is served in production.
+    openapi_url=None if settings.is_production else f"{settings.API_V1_PREFIX}/openapi.json",
     docs_url=None if settings.is_production else "/docs",
     redoc_url=None if settings.is_production else "/redoc",
     lifespan=lifespan,

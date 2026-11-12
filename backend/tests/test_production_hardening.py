@@ -337,13 +337,24 @@ def test_failed_email_is_retried_then_given_up(smtp):
 # --------------------------------------------------------------------------- configuration
 def test_configuration_fails_closed():
     from app.core.config import Settings
-    good = dict(ENVIRONMENT="production", SECRET_KEY="x" * 40, DATABASE_URL="postgresql+psycopg://u:p@db/acedra",
-                CORS_ORIGINS="https://acedra.example.org", PUBLIC_APP_URL="https://acedra.example.org")
+    good = dict(ENVIRONMENT="production", SECRET_KEY="k9Zr2mQx7LpT4vNc8WdY1sHb6JfG3aEu0RoXiMqV", DATABASE_URL="postgresql+psycopg://u:p@db/acedra",
+                CORS_ORIGINS="https://acedra.example.org", PUBLIC_APP_URL="https://acedra.example.org",
+                EMAIL_PROVIDER="smtp", SMTP_HOST="smtp.example.org", EMAIL_FROM="ACEDRA <no-reply@example.org>")
     Settings(_env_file=None, **good)
+    # Development conveniences can never reach production.
+    for bad in ({"EMAIL_PROVIDER": "log"}, {"EMAIL_FROM": "ACEDRA <no-reply@acedra.local>"},
+                {"SEED_DEMO_DATA": True}, {"ALLOW_INSECURE_DEV_SECRET": True},
+                {"SECRET_KEY": "dev-only-insecure-secret-change-me"}, {"SECRET_KEY": "a" * 40},
+                {"DATABASE_URL": "postgresql+psycopg://acedra:acedra-dev-password@db/acedra"},
+                {"DATABASE_URL": "sqlite:///./acedra.db"}, {"CORS_ORIGINS": "*"},
+                {"CORS_ORIGINS": "http://localhost:5173"}, {"PUBLIC_APP_URL": "https://localhost"}):
+        with pytest.raises(ValueError):
+            Settings(_env_file=None, **{**good, **bad})
     with pytest.raises(ValueError):
         Settings(_env_file=None, **{**good, "PUBLIC_APP_URL": "http://acedra.example.org"})
     with pytest.raises(ValueError):
         Settings(_env_file=None, **{**good, "ENVIRONMENT": "prod"})  # a typo must not silently mean "development"
+    assert Settings(_env_file=None, **good).is_production
     with pytest.raises(ValueError):  # built-in secret with a real database server, whatever the environment
         Settings(_env_file=None, ENVIRONMENT="development", DATABASE_URL="postgresql+psycopg://u:p@db/acedra")
     Settings(_env_file=None, ENVIRONMENT="development", DATABASE_URL="sqlite:///./dev.db")

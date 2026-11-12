@@ -9,6 +9,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
 PROJECT_ROOT = BASE_DIR.parent  # repository root
 
 _INSECURE_DEFAULT_SECRET = "dev-only-insecure-secret-change-me"
+# Passwords that appear in the development templates and compose file; never valid in production.
+_DEV_DATABASE_MARKERS = ("acedra-dev-password", "acedra-ci")
+
+
+def _is_local(url: str) -> bool:
+    return any(host in url for host in ("localhost", "127.0.0.1", "0.0.0.0"))
 
 
 class Settings(BaseSettings):
@@ -19,7 +25,7 @@ class Settings(BaseSettings):
     """
 
     PROJECT_NAME: str = "ACEDRA"
-    VERSION: str = "1.0.0"
+    VERSION: str = "1.0.0-rc.1"
     ENVIRONMENT: str = "development"  # development | test | production
     API_V1_PREFIX: str = "/api/v1"
     PUBLIC_APP_URL: str = "http://localhost:5173"
@@ -56,6 +62,8 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = f"sqlite:///{PROJECT_ROOT}/acedra.db"
+    # Read by docker/entrypoint.sh to load the sample universities. Declared here so production can refuse it.
+    SEED_DEMO_DATA: bool = False
     AUTO_CREATE_SCHEMA: bool = True  # development convenience; production uses Alembic
 
     @field_validator("DATABASE_URL", mode="before")
@@ -129,14 +137,29 @@ class Settings(BaseSettings):
             problems.append("SECRET_KEY must be set when using a database server "
                             "(set ALLOW_INSECURE_DEV_SECRET=true only for a local throwaway stack).")
         if self.is_production:
-            if self.SECRET_KEY == _INSECURE_DEFAULT_SECRET or len(self.SECRET_KEY) < 32:
+            if self.SECRET_KEY == _INSECURE_DEFAULT_SECRET or len(self.SECRET_KEY) < 32 \
+                    or len(set(self.SECRET_KEY)) < 10:
                 problems.append("SECRET_KEY must be set to a random value of at least 32 characters.")
             if any(o == "*" for o in self.CORS_ORIGINS):
                 problems.append("CORS_ORIGINS must list explicit origins in production.")
             if self.DATABASE_URL.startswith("sqlite"):
                 problems.append("DATABASE_URL must point to PostgreSQL in production.")
-            if self.EMAIL_PROVIDER == "smtp" and not self.SMTP_HOST:
+            if self.EMAIL_PROVIDER != "smtp":
+                problems.append("EMAIL_PROVIDER must be smtp in production: with 'log', invitations and "
+                                "password resets are stored on the server and never delivered.")
+            elif not self.SMTP_HOST:
                 problems.append("SMTP_HOST is required when EMAIL_PROVIDER=smtp.")
+            if "acedra.local" in self.EMAIL_FROM or "@" not in self.EMAIL_FROM:
+                problems.append("EMAIL_FROM must be a real sender address on your own domain.")
+            if any(marker in self.DATABASE_URL for marker in _DEV_DATABASE_MARKERS):
+                problems.append("DATABASE_URL still uses a development password.")
+            if any(_is_local(origin) for origin in self.CORS_ORIGINS) or _is_local(self.PUBLIC_APP_URL):
+                problems.append("CORS_ORIGINS and PUBLIC_APP_URL must not point at localhost in production.")
+            if self.SEED_DEMO_DATA:
+                problems.append("SEED_DEMO_DATA must be false in production: the sample universities use "
+                                "published demonstration passwords.")
+            if self.ALLOW_INSECURE_DEV_SECRET:
+                problems.append("ALLOW_INSECURE_DEV_SECRET must not be set in production.")
             if not self.PUBLIC_APP_URL.startswith("https://"):
                 problems.append("PUBLIC_APP_URL must be an https:// address in production.")
             self.AUTO_CREATE_SCHEMA = False

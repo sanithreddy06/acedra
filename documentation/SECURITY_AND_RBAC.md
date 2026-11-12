@@ -60,6 +60,17 @@ Lockout is a trade-off: someone who knows an email address can keep that account
 The lock is short, is recorded in the audit log (`LOGIN_BLOCKED`), and the account owner can always get back in
 with a password reset.
 
+## Release-candidate controls (v1.0.0-rc.1)
+
+| Area | Control |
+|---|---|
+| Production configuration | The API validates its settings before migrating or serving and refuses development values: built-in or weak `SECRET_KEY`, SQLite or a development database password, wildcard or `localhost` origins, a non-HTTPS public URL, `EMAIL_PROVIDER=log`, the built-in sender address, `SEED_DEMO_DATA=true`, `ALLOW_INSECURE_DEV_SECRET=true`. The container entrypoint runs the same check first, so a bad configuration never reaches the database |
+| Sample data | `database/seeds/seed_all.py` exits with an error when `ENVIRONMENT=production`; the demonstration passwords cannot be loaded into a live system |
+| API surface | `/docs`, `/redoc` and the OpenAPI schema are not served in production. Email bodies (which hold single-use links) are hidden in the platform outbox in production |
+| Dependencies | Python packages are pinned exactly; `pip-audit` and `npm audit` run in CI and report no known vulnerabilities at this release (React Router 6 → 7 and Vite 5 → 7 removed the advisories that were open) |
+| Secrets | detect-secrets checks the working tree against a reviewed baseline, and `scripts/scan_git_history.py` and gitleaks check every commit, on each push. The history contains no credentials: only development placeholders |
+| Backups | Dumps are owner-readable only, checksummed and verified on write; restores verify the archive, refuse a non-empty target and are transactional |
+
 ## Other controls
 
 * bcrypt (12 rounds) password hashing; password policy of at least 10 characters mixing three character classes.
@@ -81,6 +92,10 @@ with a password reset.
   sign-in success and failure, invitations, configuration, grants, every student-data access and enquiry changes.
 
 ## Tests that attack these controls
+
+`documentation/RELEASE_VERIFICATION.md` records the live checks run for this release candidate (37 against a
+production-mode API on an empty PostgreSQL database, 46 for tenant isolation, roles and authentication against a
+seeded one); the scripts are in `scripts/verification/`.
 
 `backend/tests/test_production_hardening.py` covers every row of the hardening table above that lives in the
 backend. `backend/tests/test_multitenancy_and_roles.py` and `test_platform_workflow.py` cover:

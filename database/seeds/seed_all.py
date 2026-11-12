@@ -18,7 +18,11 @@ import random
 import sys
 from datetime import date, datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend")))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# The application package is at <repo>/backend/app in a checkout and at /app/app inside the container images
+# (where this file is /app/database/seeds/seed_all.py). Add both so the seed runs in either layout.
+sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "../..")))
+sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "../../backend")))
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from app.core.database import Base, SessionLocal, engine  # noqa: E402
@@ -415,6 +419,10 @@ def seed_enquiries(db, sa, e1, e2, reva, northfield, deccan):
 
 
 def main():
+    from app.core.config import settings
+    if settings.is_production:
+        # The sample universities sign in with published demonstration passwords.
+        sys.exit("Refusing to load sample data: ENVIRONMENT=production. Use an empty database in production.")
     if "--if-empty" in sys.argv:
         from sqlalchemy import inspect, text
         if inspect(engine).has_table("universities"):

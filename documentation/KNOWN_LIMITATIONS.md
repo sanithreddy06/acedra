@@ -1,26 +1,30 @@
 # Known limitations
 
-ACEDRA in this repository is **prototype-complete**. It is not yet production-ready or institution-ready.
+ACEDRA in this repository is **version 1.0.0-rc.1, a release candidate**. `RELEASE_VERIFICATION.md` lists what was
+executed to verify it. It is not yet institution-ready, and two parts of the production deployment are unverified
+(see "Before production").
 
 | Stage | Meaning | Status |
 |---|---|---|
 | Prototype-complete | All workflows work end to end on synthetic data; isolation and permissions are enforced and tested | **Yes** |
-| Production-ready | Hardened, observed and operated infrastructure with real email, TLS, backups, monitoring and a security review | Not yet; see below |
+| Release candidate | Application verified in production mode on PostgreSQL 16 with Redis and SMTP delivery; migrations, backup and restore, isolation, permissions, sign-in protection and rate limiting executed and passing; no known dependency vulnerabilities; no secrets in the history | **Yes** |
+| Production-ready | The container images and TLS front end built and smoke-tested, monitoring and alerting, an external security review | Not yet; see below |
 | Institution-ready | A university has approved the deployment, provided authorised data, validated its policies and rules, and integrations are in place | No. Requires each institution's approval and data |
 
 ## Before production
 
 * **No external security review or penetration test** has been performed. Automated tests attack the main
   isolation paths but are not exhaustive.
-* **Verified outside Docker:** the API in production mode (`ENVIRONMENT=production`, PostgreSQL 16, Redis, four
-  Gunicorn workers) starts, migrates an empty database, bootstraps the first super administrator as documented,
-  and enforces the 20/minute sign-in limit across all workers per visitor address.
-* **The production images have still not been built or run.** The backend image was rewritten (dependencies in
-  a virtual environment the non-root user can read; the previous image installed them under `/root`, out of that user's reach), Nginx now terminates
-  TLS, and Redis was added, but none of this has been executed. CI builds both images; a smoke test of the full
-  stack is the first deployment step.
-* The test suite passes on both SQLite and PostgreSQL 16 (163 tests), and `alembic upgrade head` followed by
-  `alembic check` is clean on PostgreSQL.
+* **The Docker images and the Nginx TLS configuration have not been built or run.** The verification
+  environment could not download base images, so `docker build` and `docker compose up` were not executed, and
+  `docker/nginx.conf` has not been loaded by a real Nginx. What the images contain was verified outside Docker:
+  the pinned requirements install on Python 3.12, the entrypoint runs as a non-root user, and the API runs under
+  Gunicorn with four workers against PostgreSQL 16 and Redis. Both compose files pass `docker compose config`.
+  Building the images and smoke-testing the stack (both containers healthy, HTTPS loads, HTTP redirects,
+  `/api/health` answers through Nginx) is the first deployment step.
+* **Backup and restore were tested on one machine**, from one PostgreSQL 16 database into another, with the
+  scripts in `database/`. The commands for the compose stack (`docker compose exec db pg_dump …`) are documented
+  but were not executed. Repeat the restore test on the real infrastructure.
 * Tokens are stored in `sessionStorage` (cleared when the tab closes). The CSP no longer allows inline scripts
   and refresh tokens are single use, which limits the damage of a stolen token; httpOnly cookies with CSRF
   protection would reduce it further.
@@ -80,10 +84,10 @@ Known, deliberate gaps in code quality, kept small and listed so they can be sch
   bypass mode and leave it there. It is safe where they are used today (authentication and public endpoints),
   but any new caller inside a university route would silently lose tenant filtering; wrap such uses in
   `unscoped(db)` instead.
-* **Dependencies.** Python packages are pinned exactly in `backend/requirements.txt`; there is no automated
-  update or vulnerability scan yet. `npm audit` reports moderate advisories for React Router 6 (fixed in v7) and a Vite 5
-  development-server advisory (fixed in later majors). Neither affects the built site's runtime beyond React
-  Router's link handling; upgrading either is a major-version change.
+* **Dependencies.** Python packages are pinned exactly in `backend/requirements.txt` and audited in CI; there
+  is no automated update tool (Dependabot or Renovate) yet. `npm audit` and `pip-audit`
+  report no known vulnerabilities at this release: React Router was upgraded from 6 to 7 and Vite from 5 to 7,
+  and `minimatch` (used only by the linter) is pinned to a fixed version through an npm override.
 
 ## Public website and legal documents
 

@@ -50,3 +50,6 @@ frontend/openapi.json
 # ---------------------------------------------------------------- TLS material (never committed)
 docker/certs/
 docker/acme/
+
+# ---------------------------------------------------------------- Release output (built by scripts/make_release.sh)
+release/
