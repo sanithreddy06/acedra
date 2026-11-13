@@ -94,7 +94,7 @@ export function AboutPage() {
       </Section>
       <Section title="Who operates ACEDRA">
         <p>ACEDRA is operated by {configured(SITE.operator, 'registered name of the operating entity')}.</p>
-        <p>Registered address: {configured(SITE.address, 'registered office address')}.</p>
+        <p>Registered address: {configured(SITE.address, 'registered office address')}{SITE.demoContact && ' (demonstration placeholder)'}.</p>
       </Section>
     </InfoPage>
   );
@@ -303,10 +303,12 @@ export function ContactPage() {
           <div className="rounded-lg border border-line p-4">
             <h2 className="text-[13px] font-semibold">Other ways to reach us</h2>
             <dl className="mt-2 space-y-2 text-muted">
-              <div><dt className="text-[12px] text-faint">Email</dt><dd>{configured(SITE.supportEmail, 'support email')}</dd></div>
-              <div><dt className="text-[12px] text-faint">Phone</dt><dd>{configured(SITE.phone, 'phone number')}</dd></div>
+              <div><dt className="text-[12px] text-faint">Email</dt><dd>{SITE.supportEmail ? <a className="link" href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a> : configured(null, 'support email')}</dd></div>
+              <div><dt className="text-[12px] text-faint">Phone</dt><dd>{SITE.phone ? <a className="link" href={`tel:${SITE.phone.replace(/[^\d+]/g, '')}`}>{SITE.phone}</a> : configured(null, 'phone number')}</dd></div>
               <div><dt className="text-[12px] text-faint">Address</dt><dd>{configured(SITE.address, 'office address')}</dd></div>
+              <div><dt className="text-[12px] text-faint">Website</dt><dd>{SITE.website ? <a className="link" href={SITE.website} target="_blank" rel="noopener noreferrer">{SITE.website.replace(/^https?:\/\//, '')}</a> : configured(null, 'website')}</dd></div>
             </dl>
+            {SITE.demoContact && <p className="mt-3 text-[12px] text-faint">Demonstration placeholders, not genuine contact details.</p>}
           </div>
           <p className="text-[12.5px] text-muted">Students and staff: for help with your account, contact your university’s administrator first.</p>
         </div>

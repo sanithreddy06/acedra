@@ -183,7 +183,7 @@ export function AlertsPage() {
   const stats = useApi<RiskStatistics>(me?.role === 'admin' ? '/risk/statistics' : null);
   const evaluate = async () => {
     setRunning(true);
-    try { const r = await api.post<RiskEvaluation>('/risk/evaluate', { run_type: 'MANUAL' }); toast(`Evaluation complete — ${r.alerts_generated_count ?? 0} new alert(s)`); alerts.reload(); stats.reload(); }
+    try { const r = await api.post<RiskEvaluation>('/risk/evaluate', { run_type: 'MANUAL' }); toast(`Evaluation complete — ${r.alerts_generated_count ?? 0} alert(s) raised or refreshed`); alerts.reload(); stats.reload(); }
     catch (e) { toast(errorMessage(e), 'error'); } finally { setRunning(false); }
   };
   return (

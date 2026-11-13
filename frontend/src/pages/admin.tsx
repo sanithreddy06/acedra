@@ -709,6 +709,8 @@ export function SettingsPage() {
             <Panel title="Managed by ACEDRA">
               <KeyValues cols={1} items={[
                 ['University', d.name], ['Status', <StatusBadge status={d.status} />],
+                ['Website', d.official_website ? <a className="link" href={d.official_website} target="_blank" rel="noopener noreferrer">{d.official_website.replace(/^https?:\/\//, '')}</a> : '—'],
+                ['Location', d.location || '—'],
                 ['Email domains', d.domains?.map((x) => x.domain).join(', ') || '—'],
                 ['Student email accounts', d.student_email_mode === 'rio_assisted' ? 'ACEDRA-assisted (additional service)' : 'Provided by the university'],
                 ['Enabled modules', <span>{d.enabled_modules.length} of 6</span>], ['Service agreement', d.agreement_reference || '—'],

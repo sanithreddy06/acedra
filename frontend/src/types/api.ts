@@ -40,7 +40,7 @@ export interface University {
 
 /** `/auth/me` and the `user` returned at sign-in (AuthService.build_user_info). */
 export interface Me {
-  id: number; email: string; full_name: string; role: Role; title?: string | null; department_id?: number | null;
+  id: number; email: string; full_name: string; role: Role; title?: string | null; phone?: string | null; department_id?: number | null;
   department_name?: string | null; avatar_url?: string | null; is_platform: boolean; university: University | null;
   student_id?: number; roll_number?: string; usn?: string; cgpa?: number; current_semester?: number;
   faculty_id?: number; mentor_id?: number; employee_id?: string; designation?: string | null;

@@ -36,7 +36,8 @@ export function FacultyOverview() {
         <>
           <StatStrip className="mb-6">
             <Stat label="Average attendance" value={pct(d.average_cohort_attendance, 1)} tone={d.average_cohort_attendance < minAtt ? 'attention' : undefined} />
-            <Stat label="Average internal marks" value={pct(d.average_cohort_marks, 0)} />
+            {/* The API reports the cohort’s average CGPA scaled to 100 as `average_cohort_marks`. */}
+            <Stat label="Average CGPA" value={num(d.average_cohort_marks / 10, 2)} />
             <Stat label="Below attendance requirement" value={below.length} tone={below.length ? 'attention' : undefined} />
             {alerts.data && <Stat label="Open alerts" value={alerts.data.total} />}
           </StatStrip>
@@ -177,7 +178,7 @@ export function PlacementOverview() {
   return (
     <div>
       <PageHeader title={q ? `${q.eligible_count} of ${q.total_students} students meet placement eligibility.` : 'Placement overview'}
-        lede={q ? `${q.opportunities_count} open opportunities · ${q.placed_count} placed so far` : undefined}
+        lede={q ? `${q.opportunities_count} ${q.opportunities_count === 1 ? 'opportunity' : 'opportunities'} · ${q.placed_count} placed so far` : undefined}
         actions={<Link to="/app/opportunities"><Button variant="primary">Manage opportunities</Button></Link>} />
       <Async state={d} rows={4}>{(x) => (
         <>
@@ -286,7 +287,7 @@ export function OpportunitiesPage() {
   };
   return (
     <div>
-      <PageHeader title="Opportunities" lede="Placement drives and internships with clear eligibility. Students only see those they qualify for."
+      <PageHeader title="Opportunities" lede="Placement drives and internships with clear eligibility. Students see every open opportunity; those they do not qualify for are marked “Not eligible”."
         actions={me?.role === 'placement_officer' && <Button variant="primary" icon={<Plus size={14} />} onClick={() => setOpen(true)}>New opportunity</Button>} />
       <Panel padded={false}>
         <Async state={opps}>{(list) => (

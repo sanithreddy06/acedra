@@ -26,7 +26,10 @@ export function AccountPage() {
       <PageHeader title="Account" />
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Your details" description="Contact your administrator to change these.">
-          <KeyValues cols={1} items={[['Name', me.full_name], ['Email', me.email], ['Role', ROLE_LABEL[me.role]], ['Workspace', me.university?.name || 'ACEDRA platform']]} />
+          <KeyValues cols={1} items={[['Name', me.full_name], ['Email', me.email], ['Phone', me.phone || 'Not recorded'], ['Role', ROLE_LABEL[me.role]],
+            ...(me.designation || me.title ? [['Designation', me.designation || me.title] as [string, string]] : []),
+            ...(me.department_name ? [['Department', me.department_name] as [string, string]] : []),
+            ['Workspace', me.university?.name || 'ACEDRA platform']]} />
         </Panel>
         <Panel title="Change password" description="Changing your password signs you out of every device.">
           <div className="space-y-3">

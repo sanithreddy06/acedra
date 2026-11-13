@@ -104,6 +104,7 @@ class AuthService:
             "full_name": user.full_name,
             "role": user.role,
             "title": user.title,
+            "phone": user.phone,
             "department_id": user.department_id,
             "department_name": user.department.name if user.department else None,
             "avatar_url": user.avatar_url,
