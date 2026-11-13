@@ -18,13 +18,13 @@ fail() { printf '\n\033[31mCannot start: %s\033[0m\n' "$*"; echo; read -r -p "Pr
 
 # ---------------------------------------------------------------- prerequisites
 PY=""
-for candidate in python3.12 python3.13 python3.11 python3.10 python3; do
+for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
     if command -v "$candidate" >/dev/null 2>&1 && \
-       "$candidate" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 13) else 1)' 2>/dev/null; then
+       "$candidate" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 14) else 1)' 2>/dev/null; then
         PY="$candidate"; break
     fi
 done
-[ -n "$PY" ] || fail "Python 3.10 to 3.13 is required. Install it with:  brew install python@3.12   (or from python.org)"
+[ -n "$PY" ] || fail "Python 3.10 to 3.14 is required. Install it with:  brew install python@3.12   (or from python.org)"
 
 command -v node >/dev/null 2>&1 || fail "Node.js 20.19 or newer is required. Install it with:  brew install node   (or from nodejs.org)"
 node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit((a===20&&b>=19)||(a===22&&b>=12)||a>22?0:1)' \
