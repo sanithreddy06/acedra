@@ -25,6 +25,10 @@ collects institutional enquiries. There is no public sign-up.
 
 ## Quick start
 
+On macOS, double-click **`start.command`** (or run `./start.command` in a terminal). It installs what is
+missing on the first run, starts the API and the web app, and opens http://localhost:5173/login. It needs
+Python 3.10–3.13 and Node.js 20.19 or newer. Press Ctrl+C in its window to stop. The manual steps are:
+
 ```bash
 # backend
 cd backend && python3 -m venv .venv && source .venv/bin/activate
